@@ -15,7 +15,6 @@ module.exports = (io, socket) => {
   socket.on('locationUpdate', async (data) => {
     const { cyclistId, rideId, latitude, longitude, speed, timestamp } = data;
     
-    // 1. Performance: Only broadcast if position/speed changed significantly
     const lastKnown = cyclistStateCache.get(cyclistId);
     if (lastKnown && lastKnown.lat === latitude && lastKnown.lng === longitude && lastKnown.speed === speed) {
         return; // Skip redundant updates
@@ -40,7 +39,7 @@ module.exports = (io, socket) => {
     // Update Cache
     cyclistStateCache.set(cyclistId, { lat: latitude, lng: longitude, speed, stationarySince: stationaryStartTime });
 
-    // 4. Async DB Persistence (fire and forget to prevent blocking)
+    // 4. Async DB Persistence
     Location.create(data).catch(err => console.error("DB Error:", err));
   });
 
