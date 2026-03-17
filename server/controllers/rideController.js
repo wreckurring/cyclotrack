@@ -1,10 +1,47 @@
-const Ride = require('../models/Ride');
+const Ride = require("../models/Ride");
 
 // @desc    Get system health
 // @route   GET /api/health
 // @access  Public
 const getHealthStatus = (req, res) => {
-  res.status(200).json({ status: 'OK', message: 'Tracking server is running' });
+  res.status(200).json({ status: "OK", message: "Tracking server is running" });
+};
+
+// @desc    Get all rides
+// @route   GET /api/rides
+// @access  Public
+const getAllRides = async (req, res) => {
+  try {
+    const rides = await Ride.find().sort({ startTime: -1 });
+    res.json(rides);
+  } catch (err) {
+    console.error("Error fetching rides:", err);
+    res.status(500).json({ message: "Server error" });
+  }
+};
+
+// @desc    Create a new ride
+// @route   POST /api/rides
+// @access  Public (Mock)
+const createRide = async (req, res) => {
+  try {
+    const { name, destination, leaderId } = req.body;
+
+    if (!name) {
+      return res.status(400).json({ message: "Ride name is required" });
+    }
+
+    const ride = await Ride.create({
+      name,
+      destination: destination || "Unknown",
+      leaderId: leaderId || "",
+    });
+
+    res.status(201).json(ride);
+  } catch (err) {
+    console.error("Error creating ride:", err);
+    res.status(500).json({ message: "Server error" });
+  }
 };
 
 // @desc    Get ride details by ID
@@ -14,16 +51,18 @@ const getRideById = async (req, res) => {
   try {
     const ride = await Ride.findById(req.params.id);
     if (!ride) {
-      return res.status(404).json({ message: 'Ride not found' });
+      return res.status(404).json({ message: "Ride not found" });
     }
     res.json(ride);
   } catch (err) {
     console.error("Error fetching ride:", err);
-    res.status(500).json({ message: 'Server error' });
+    res.status(500).json({ message: "Server error" });
   }
 };
 
 module.exports = {
   getHealthStatus,
-  getRideById
+  getAllRides,
+  createRide,
+  getRideById,
 };

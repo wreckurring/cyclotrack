@@ -1,16 +1,35 @@
-import React from 'react';
-import { MapContainer, TileLayer, Marker, Popup } from 'react-leaflet';
+import React, { useMemo } from 'react';
+import { MapContainer, TileLayer, Marker, Popup, useMap } from 'react-leaflet';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 
-export default function LiveMap({ cyclists }) {
-  const getMarkerColor = (status) => {
-    switch(status) {
-      case 'moving': return 'green';
-      case 'slow': return 'yellow';
-      case 'stationary': return 'red';
-      case 'disconnected': return 'gray';
-      default: return 'blue';
+function MapCenter({ center }) {
+  const map = useMap();
+
+  React.useEffect(() => {
+    if (center) {
+      map.setView(center, map.getZoom());
+    }
+  }, [center, map]);
+
+  return null;
+}
+
+export default function LiveMap({ cyclists, leaderId }) {
+  const getMarkerColor = (cyclist) => {
+    if (leaderId && cyclist.cyclistId === leaderId) return 'purple';
+
+    switch (cyclist.status) {
+      case 'moving':
+        return 'green';
+      case 'slow':
+        return 'yellow';
+      case 'stationary':
+        return 'red';
+      case 'disconnected':
+        return 'gray';
+      default:
+        return 'blue';
     }
   };
 
@@ -22,20 +41,33 @@ export default function LiveMap({ cyclists }) {
     });
   };
 
+  const firstCyclist = useMemo(() => {
+    const list = Object.values(cyclists);
+    return list.length ? list[0] : null;
+  }, [cyclists]);
+
+  const center = firstCyclist ? [firstCyclist.latitude, firstCyclist.longitude] : [51.505, -0.09];
+
   return (
-    <MapContainer center={[51.505, -0.09]} zoom={13} style={{ height: "100%", width: "100%", zIndex: 0 }}>
+    <MapContainer center={center} zoom={13} style={{ height: '100%', width: '100%', zIndex: 0 }}>
       <TileLayer url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
-      
+      <MapCenter center={center} />
+
       {Object.values(cyclists).map((cyclist) => (
-        <Marker 
-          key={cyclist.cyclistId} 
+        <Marker
+          key={cyclist.cyclistId}
           position={[cyclist.latitude, cyclist.longitude]}
-          icon={createIcon(getMarkerColor(cyclist.status))}
+          icon={createIcon(getMarkerColor(cyclist))}
         >
           <Popup>
-            <strong>ID:</strong> {cyclist.cyclistId} <br/>
-            <strong>Speed:</strong> {cyclist.speed.toFixed(2)} m/s <br/>
-            <strong>Status:</strong> {cyclist.status} <br/>
+            <strong>ID:</strong> {cyclist.cyclistId} <br />
+            <strong>Speed:</strong> {cyclist.speed.toFixed(2)} m/s <br />
+            <strong>Status:</strong> {cyclist.status} <br />
+            {leaderId && cyclist.cyclistId === leaderId && (
+              <span>
+                <strong>Role:</strong> Ride Leader
+              </span>
+            )}
           </Popup>
         </Marker>
       ))}

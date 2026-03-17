@@ -14,7 +14,7 @@ export default function CyclistDashboard() {
           </div>
           <h2 className="text-2xl font-bold text-gray-900 mb-2">Use the Mobile App</h2>
           <p className="text-gray-500 mb-6">
-            Location tracking requires background GPS permissions. Please log in using the CycloTrack mobile app to join the ride.
+            Ride leaders and cyclists both track location via the mobile app. Make sure the trip ID and your rider ID match the ride configured in the admin dashboard.
           </p>
           <button 
             onClick={() => navigate('/')}

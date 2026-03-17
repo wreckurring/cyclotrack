@@ -8,8 +8,17 @@ export default function Login() {
 
   const handleLogin = (e) => {
     e.preventDefault();
-    if (role === 'leader') navigate('/leader');
-    else navigate('/cyclist');
+
+    switch(role) {
+      case 'admin':
+        navigate('/admin');
+        break;
+      case 'cyclist':
+        navigate('/cyclist');
+        break;
+      default:
+        navigate('/leader');
+    }
   };
 
   return (
@@ -33,6 +42,7 @@ export default function Login() {
             >
               <option value="leader">Ride Leader</option>
               <option value="cyclist">Cyclist</option>
+              <option value="admin">Admin (Monitor Trips)</option>
             </select>
           </div>
 
