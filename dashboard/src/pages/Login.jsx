@@ -42,7 +42,7 @@ export default function Login() {
             >
               <option value="leader">Ride Leader</option>
               <option value="cyclist">Cyclist</option>
-              <option value="admin">Admin (Monitor Trips)</option>
+              <option value="admin">Admin</option>
             </select>
           </div>
 
