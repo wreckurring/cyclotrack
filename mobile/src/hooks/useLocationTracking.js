@@ -5,21 +5,6 @@ export const useLocationTracking = (isActive, callback) => {
   const [error, setError] = useState(null);
 
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
   useEffect(() => {
     let subscriber;
     const startTracking = async () => {
@@ -29,6 +14,80 @@ export const useLocationTracking = (isActive, callback) => {
           setError('Permission denied');
           return;
         }
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
         subscriber = await Location.watchPositionAsync(
           {
