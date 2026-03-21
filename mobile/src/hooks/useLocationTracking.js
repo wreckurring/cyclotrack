@@ -14,10 +14,6 @@ export const useLocationTracking = (isActive, callback) => {
           return;
         }
 
-
-
-
-
         subscriber = await Location.watchPositionAsync(
           {
             accuracy: Location.Accuracy.High,
