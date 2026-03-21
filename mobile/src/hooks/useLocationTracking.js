@@ -4,7 +4,6 @@ import * as Location from 'expo-location';
 export const useLocationTracking = (isActive, callback) => {
   const [error, setError] = useState(null);
 
-
   useEffect(() => {
     let subscriber;
     const startTracking = async () => {
