@@ -18,19 +18,6 @@ export const useLocationTracking = (isActive, callback) => {
 
 
 
-
-
-
-
-
-
-
-
-
-
-
-
-  
   useEffect(() => {
     let subscriber;
     const startTracking = async () => {
