@@ -7,7 +7,7 @@ const RideSchema = new mongoose.Schema(
     leaderId: { type: String, default: "" },
     startTime: { type: Date, default: Date.now },
     endTime: { type: Date },
-    participants: [{ type: mongoose.Schema.Types.ObjectId, ref: "User" }],
+    participants: [{ type: String }],
     status: { type: String, enum: ["active", "completed"], default: "active" },
   },
   { timestamps: true },

@@ -26,15 +26,17 @@ const getAllRides = async (req, res) => {
 const createRide = async (req, res) => {
   try {
     const { name, destination, leaderId } = req.body;
+    const trimmedName = name?.trim();
 
-    if (!name) {
+    if (!trimmedName) {
       return res.status(400).json({ message: "Ride name is required" });
     }
 
     const ride = await Ride.create({
-      name,
-      destination: destination || "Unknown",
-      leaderId: leaderId || "",
+      name: trimmedName,
+      destination: destination?.trim() || "Unknown",
+      leaderId: leaderId?.trim() || "",
+      participants: [],
     });
 
     res.status(201).json(ride);

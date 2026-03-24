@@ -12,6 +12,7 @@ function App() {
       <Routes>
         <Route path="/" element={<Login />} />
         <Route path="/leader" element={<LeaderDashboard />} />
+        <Route path="/leader/:rideId" element={<LeaderDashboard />} />
         <Route path="/cyclist" element={<CyclistDashboard />} />
         <Route path="/admin" element={<AdminDashboard />} />
         <Route path="/admin/:rideId" element={<AdminDashboard />} />

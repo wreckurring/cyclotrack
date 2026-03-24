@@ -1,6 +1,5 @@
-import io from 'socket.io-client';
-
-const SOCKET_URL = "http://192.168.1.10:5000"; //your ip here
+import io from "socket.io-client";
+import { API_BASE_URL } from "../config";
 
 class SocketService {
   constructor() {
@@ -9,7 +8,7 @@ class SocketService {
 
   connect() {
     if (!this.socket) {
-      this.socket = io(SOCKET_URL, {
+      this.socket = io(API_BASE_URL, {
         reconnection: true,
         reconnectionAttempts: 5,
         reconnectionDelay: 1000,

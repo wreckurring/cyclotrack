@@ -2,20 +2,25 @@ import { io } from 'socket.io-client';
 
 const SOCKET_URL = import.meta.env.VITE_SOCKET_URL || "http://localhost:5000";
 
-let socket;
+let socket = null;
 
 export const initiateSocketConnection = () => {
-  socket = io(SOCKET_URL, {
-    reconnection: true,
-  });
-  console.log(`Connecting socket...`);
+  if (!socket) {
+    socket = io(SOCKET_URL, {
+      reconnection: true,
+    });
+  }
+
+  return socket;
 };
 
 export const disconnectSocket = () => {
-  console.log('Disconnecting socket...');
-  if(socket) socket.disconnect();
-}
+  if (socket) {
+    socket.disconnect();
+    socket = null;
+  }
+};
 
 export const getSocket = () => {
-    return socket;
-}
+  return socket || initiateSocketConnection();
+};

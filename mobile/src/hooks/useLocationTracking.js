@@ -1,24 +1,43 @@
-import { useState, useEffect } from 'react';
-import * as Location from 'expo-location';
+import { useEffect, useRef, useState } from "react";
+import * as Location from "expo-location";
 
 export const useLocationTracking = (isActive, callback) => {
   const [error, setError] = useState(null);
+  const subscriptionRef = useRef(null);
 
   useEffect(() => {
-    let subscriber;
+    let cancelled = false;
+
+    const stopTracking = () => {
+      if (subscriptionRef.current) {
+        subscriptionRef.current.remove();
+        subscriptionRef.current = null;
+      }
+    };
+
     const startTracking = async () => {
+      stopTracking();
+      setError(null);
+
       try {
         const { status } = await Location.requestForegroundPermissionsAsync();
-        if (status !== 'granted') {
-          setError('Permission denied');
+
+        if (status !== "granted") {
+          if (!cancelled) {
+            setError("Location permission denied");
+          }
           return;
         }
 
-        subscriber = await Location.watchPositionAsync(
+        if (cancelled) {
+          return;
+        }
+
+        subscriptionRef.current = await Location.watchPositionAsync(
           {
             accuracy: Location.Accuracy.High,
-            timeInterval: 5000, // 5 seconds
-            distanceInterval: 1, // 1 meter
+            timeInterval: 5000,
+            distanceInterval: 1,
           },
           (location) => {
             callback({
@@ -27,21 +46,24 @@ export const useLocationTracking = (isActive, callback) => {
               speed: location.coords.speed || 0,
               timestamp: location.timestamp,
             });
-          }
+          },
         );
-      } catch (err) {
-        setError(err.message);
+      } catch (trackingError) {
+        if (!cancelled) {
+          setError(trackingError.message || "Unable to start location tracking");
+        }
       }
     };
 
     if (isActive) {
       startTracking();
-    } else if (subscriber) {
-      subscriber.remove();
+    } else {
+      stopTracking();
     }
 
     return () => {
-      if (subscriber) subscriber.remove();
+      cancelled = true;
+      stopTracking();
     };
   }, [isActive, callback]);
 
