@@ -4,6 +4,7 @@ import Login from './src/pages/Login';
 import LeaderDashboard from './src/pages/LeaderDashboard';
 import CyclistDashboard from './src/pages/CyclistDashboard';
 import AdminDashboard from './src/pages/AdminDashboard';
+import BrowserTracker from './src/pages/BrowserTracker';
 import './src/index.css';
 
 function App() {
@@ -14,6 +15,7 @@ function App() {
         <Route path="/leader" element={<LeaderDashboard />} />
         <Route path="/leader/:rideId" element={<LeaderDashboard />} />
         <Route path="/cyclist" element={<CyclistDashboard />} />
+        <Route path="/phone" element={<BrowserTracker />} />
         <Route path="/admin" element={<AdminDashboard />} />
         <Route path="/admin/:rideId" element={<AdminDashboard />} />
         {/* Fallback to login if route doesn't exist */}
