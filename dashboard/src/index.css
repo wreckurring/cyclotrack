@@ -2,8 +2,47 @@
 @tailwind components;
 @tailwind utilities;
 
-/* Ensure Leaflet map takes up the full container height */
+@layer base {
+  html {
+    color-scheme: dark;
+  }
+
+  body {
+    background-color: #09090b;
+    color: #fafafa;
+  }
+
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: #3f3f46 #18181b;
+  }
+
+  *::-webkit-scrollbar {
+    width: 5px;
+    height: 5px;
+  }
+
+  *::-webkit-scrollbar-track {
+    background: #18181b;
+  }
+
+  *::-webkit-scrollbar-thumb {
+    background-color: #3f3f46;
+    border-radius: 3px;
+  }
+}
+
 .leaflet-container {
   height: 100%;
   width: 100%;
+  background: #18181b;
+}
+
+.leaflet-control-attribution {
+  background: rgba(9, 9, 11, 0.8) !important;
+  color: #71717a !important;
+}
+
+.leaflet-control-attribution a {
+  color: #22d3ee !important;
 }

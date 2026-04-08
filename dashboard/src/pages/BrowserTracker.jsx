@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from "react";
-import { Link } from "react-router-dom";
 import { Crosshair, MapPinned, Navigation, Send, Smartphone } from "lucide-react";
+import Navbar from "../components/Navbar";
 import { fetchRides } from "../services/api";
 import {
   disconnectSocket,
@@ -8,9 +8,19 @@ import {
   initiateSocketConnection,
 } from "../services/socketService";
 
-const DEFAULT_COORDS = {
-  latitude: 12.9716,
-  longitude: 77.5946,
+const DEFAULT_COORDS = { latitude: 12.9716, longitude: 77.5946 };
+
+const SOCKET_COLORS = {
+  connected: "text-emerald-400",
+  disconnected: "text-red-400",
+  connecting: "text-amber-400",
+};
+
+const STATUS_COLORS = {
+  tracking: "text-emerald-400",
+  sending: "text-cyan-400",
+  joined: "text-amber-400",
+  idle: "text-zinc-500",
 };
 
 export default function BrowserTracker() {
@@ -25,70 +35,51 @@ export default function BrowserTracker() {
 
   useEffect(() => {
     let ignore = false;
-
     const load = async () => {
       try {
-        const rideList = await fetchRides();
-
-        if (ignore) {
-          return;
-        }
-
-        setRides(rideList);
-        setRideId((currentRideId) => currentRideId || rideList[0]?._id || "");
-      } catch (loadError) {
+        const list = await fetchRides();
         if (!ignore) {
-          setError(loadError.message || "Unable to load rides.");
+          setRides(list);
+          setRideId((cur) => cur || list[0]?._id || "");
         }
+      } catch (err) {
+        if (!ignore) setError(err.message || "Unable to load rides.");
       }
     };
-
     load();
-
-    return () => {
-      ignore = true;
-    };
+    return () => { ignore = true; };
   }, []);
 
   useEffect(() => {
     initiateSocketConnection();
     const socket = getSocket();
 
-    const handleConnect = () => setSocketState("connected");
-    const handleDisconnect = () => setSocketState("disconnected");
-    const handleRideError = (payload) =>
-      setError(payload?.message || "Unable to join that ride.");
+    const onConnect = () => setSocketState("connected");
+    const onDisconnect = () => setSocketState("disconnected");
+    const onRideError = (p) => setError(p?.message || "Unable to join that ride.");
 
-    socket.on("connect", handleConnect);
-    socket.on("disconnect", handleDisconnect);
-    socket.on("rideError", handleRideError);
-
-    if (socket.connected) {
-      setSocketState("connected");
-    }
+    socket.on("connect", onConnect);
+    socket.on("disconnect", onDisconnect);
+    socket.on("rideError", onRideError);
+    if (socket.connected) setSocketState("connected");
 
     return () => {
-      if (watchIdRef.current !== null && navigator.geolocation) {
+      if (watchIdRef.current !== null && navigator.geolocation)
         navigator.geolocation.clearWatch(watchIdRef.current);
-      }
-
       socket.emit("leaveRide");
-      socket.off("connect", handleConnect);
-      socket.off("disconnect", handleDisconnect);
-      socket.off("rideError", handleRideError);
+      socket.off("connect", onConnect);
+      socket.off("disconnect", onDisconnect);
+      socket.off("rideError", onRideError);
       disconnectSocket();
     };
   }, []);
 
   const emitLocation = (nextCoords) => {
-    const socket = getSocket();
-
     if (!rideId.trim() || !userId.trim()) {
-      setError("Select a ride and rider ID first.");
+      setError("Select a ride and set a rider ID first.");
       return;
     }
-
-    socket.emit("locationUpdate", {
+    getSocket().emit("locationUpdate", {
       rideId: rideId.trim(),
       cyclistId: userId.trim(),
       role: "cyclist",
@@ -97,23 +88,20 @@ export default function BrowserTracker() {
       speed: 0,
       timestamp: Date.now(),
     });
-
     setStatus("sending");
     setError("");
   };
 
   const joinRide = () => {
     if (!rideId.trim() || !userId.trim()) {
-      setError("Select a ride and rider ID first.");
+      setError("Select a ride and set a rider ID first.");
       return;
     }
-
     getSocket().emit("joinRide", {
       rideId: rideId.trim(),
       cyclistId: userId.trim(),
       role: "cyclist",
     });
-
     setStatus("joined");
     setError("");
   };
@@ -123,7 +111,6 @@ export default function BrowserTracker() {
       navigator.geolocation.clearWatch(watchIdRef.current);
       watchIdRef.current = null;
     }
-
     getSocket().emit("leaveRide");
     setStatus("idle");
   };
@@ -133,238 +120,180 @@ export default function BrowserTracker() {
       setError("This browser does not support geolocation.");
       return;
     }
-
     if (!window.isSecureContext) {
-      setError(
-        "Browser location usually needs HTTPS or localhost. Use manual coordinates below if this page is open over plain HTTP.",
-      );
+      setError("Geolocation requires HTTPS or localhost. Use manual coordinates instead.");
       return;
     }
-
     joinRide();
-
     watchIdRef.current = navigator.geolocation.watchPosition(
-      (position) => {
-        const nextCoords = {
-          latitude: position.coords.latitude,
-          longitude: position.coords.longitude,
-        };
-
-        setCoords(nextCoords);
-        emitLocation(nextCoords);
+      (pos) => {
+        const next = { latitude: pos.coords.latitude, longitude: pos.coords.longitude };
+        setCoords(next);
+        emitLocation(next);
         setStatus("tracking");
       },
-      (geoError) => {
-        setError(geoError.message || "Unable to read your location.");
-      },
-      {
-        enableHighAccuracy: true,
-        maximumAge: 0,
-        timeout: 10000,
-      },
+      (err) => setError(err.message || "Unable to read location."),
+      { enableHighAccuracy: true, maximumAge: 0, timeout: 10000 }
     );
   };
 
-  const sendManualLocation = () => {
-    joinRide();
-    emitLocation(coords);
-  };
-
-  const nudgeCoords = (latitudeDelta, longitudeDelta) => {
-    setCoords((current) => ({
-      latitude: Number((current.latitude + latitudeDelta).toFixed(6)),
-      longitude: Number((current.longitude + longitudeDelta).toFixed(6)),
+  const nudge = (lat, lng) => {
+    setCoords((c) => ({
+      latitude: Number((c.latitude + lat).toFixed(6)),
+      longitude: Number((c.longitude + lng).toFixed(6)),
     }));
   };
 
-  return (
-    <div className="min-h-screen bg-slate-950 text-white">
-      <div className="mx-auto max-w-4xl px-4 py-6 sm:px-6">
-        <div className="rounded-3xl border border-white/10 bg-white/5 p-5 shadow-2xl shadow-black/20">
-          <div className="flex items-start justify-between gap-4">
-            <div>
-              <div className="inline-flex rounded-2xl bg-cyan-400/10 p-3 text-cyan-300">
-                <Smartphone className="h-7 w-7" />
-              </div>
-              <h1 className="mt-4 text-3xl font-bold">Browser Ride Tracker</h1>
-              <p className="mt-3 max-w-2xl text-sm leading-6 text-slate-300">
-                Open this page on your phone browser to join a ride without Expo. If
-                browser GPS is blocked, you can still send manual coordinates and watch
-                the live marker move on the leader/admin dashboard.
-              </p>
-            </div>
-            <Link
-              to="/"
-              className="rounded-xl border border-white/10 px-3 py-2 text-sm text-slate-200 hover:bg-white/10"
-            >
-              Back
-            </Link>
-          </div>
+  const inputClass =
+    "w-full bg-zinc-800 border border-zinc-700 rounded-xl px-3 py-2.5 text-sm text-white placeholder-zinc-600 focus:outline-none focus:ring-2 focus:ring-cyan-500/30 focus:border-cyan-500/50 transition";
 
-          <div className="mt-6 grid gap-4 md:grid-cols-2">
-            <label className="block">
-              <span className="mb-2 block text-sm font-medium text-slate-200">
-                Ride
-              </span>
+  return (
+    <div className="min-h-screen bg-zinc-950 flex flex-col">
+      <Navbar title="Browser Tracker" subtitle="Test without the mobile app" />
+
+      <main className="flex-1 p-5 max-w-3xl mx-auto w-full flex flex-col gap-4">
+
+        {/* Setup */}
+        <div className="bg-zinc-900 border border-zinc-800 rounded-2xl p-5">
+          <div className="flex items-center gap-2.5 mb-4">
+            <Smartphone className="w-4 h-4 text-cyan-400" />
+            <h2 className="text-sm font-semibold text-white">Setup</h2>
+          </div>
+          <div className="grid gap-3 sm:grid-cols-2">
+            <div>
+              <label className="block text-xs text-zinc-500 mb-1.5">Ride</label>
               <select
                 value={rideId}
-                onChange={(event) => setRideId(event.target.value)}
-                className="w-full rounded-2xl border border-white/10 bg-slate-900 px-4 py-3 text-white outline-none"
+                onChange={(e) => setRideId(e.target.value)}
+                className={inputClass}
               >
                 <option value="">Select a ride</option>
-                {rides.map((ride) => (
-                  <option key={ride._id} value={ride._id}>
-                    {ride.name} ({ride._id})
+                {rides.map((r) => (
+                  <option key={r._id} value={r._id}>
+                    {r.name}
                   </option>
                 ))}
               </select>
-            </label>
-
-            <label className="block">
-              <span className="mb-2 block text-sm font-medium text-slate-200">
-                Rider ID
-              </span>
+            </div>
+            <div>
+              <label className="block text-xs text-zinc-500 mb-1.5">Rider ID</label>
               <input
                 value={userId}
-                onChange={(event) => setUserId(event.target.value)}
-                className="w-full rounded-2xl border border-white/10 bg-slate-900 px-4 py-3 text-white outline-none"
+                onChange={(e) => setUserId(e.target.value)}
                 placeholder="browser_rider_01"
+                className={inputClass}
               />
-            </label>
-          </div>
-
-          <div className="mt-4 grid gap-3 sm:grid-cols-3">
-            <div className="rounded-2xl border border-white/10 bg-slate-900/80 p-4">
-              <div className="text-xs uppercase tracking-wide text-slate-400">Socket</div>
-              <div className="mt-2 text-lg font-semibold capitalize">{socketState}</div>
-            </div>
-            <div className="rounded-2xl border border-white/10 bg-slate-900/80 p-4">
-              <div className="text-xs uppercase tracking-wide text-slate-400">Tracker</div>
-              <div className="mt-2 text-lg font-semibold capitalize">{status}</div>
-            </div>
-            <div className="rounded-2xl border border-white/10 bg-slate-900/80 p-4">
-              <div className="text-xs uppercase tracking-wide text-slate-400">Mode</div>
-              <div className="mt-2 text-lg font-semibold">
-                {window.isSecureContext ? "Browser GPS enabled" : "Manual recommended"}
-              </div>
-            </div>
-          </div>
-
-          {error && (
-            <div className="mt-4 rounded-2xl border border-amber-400/30 bg-amber-400/10 p-4 text-sm text-amber-100">
-              {error}
-            </div>
-          )}
-
-          <div className="mt-6 grid gap-4 md:grid-cols-2">
-            <div className="rounded-3xl border border-white/10 bg-slate-900/80 p-5">
-              <div className="flex items-center gap-3">
-                <Crosshair className="h-5 w-5 text-cyan-300" />
-                <h2 className="text-lg font-semibold">Browser Location</h2>
-              </div>
-              <p className="mt-3 text-sm leading-6 text-slate-300">
-                Use this if the page is opened on `localhost` or over HTTPS. Some phone
-                browsers block GPS on plain `http://192.168...` URLs.
-              </p>
-              <div className="mt-4 flex gap-3">
-                <button
-                  type="button"
-                  onClick={startBrowserTracking}
-                  className="inline-flex items-center gap-2 rounded-2xl bg-cyan-400 px-4 py-3 font-semibold text-slate-950"
-                >
-                  <Navigation className="h-4 w-4" />
-                  Start GPS
-                </button>
-                <button
-                  type="button"
-                  onClick={stopTracking}
-                  className="rounded-2xl border border-white/10 px-4 py-3 text-sm font-medium text-white"
-                >
-                  Stop
-                </button>
-              </div>
-            </div>
-
-            <div className="rounded-3xl border border-white/10 bg-slate-900/80 p-5">
-              <div className="flex items-center gap-3">
-                <MapPinned className="h-5 w-5 text-cyan-300" />
-                <h2 className="text-lg font-semibold">Manual Coordinates</h2>
-              </div>
-              <p className="mt-3 text-sm leading-6 text-slate-300">
-                This always works for end-to-end testing. Change the values or nudge
-                them with the buttons below, then send the update to the ride.
-              </p>
-
-              <div className="mt-4 grid gap-3 sm:grid-cols-2">
-                <input
-                  type="number"
-                  step="0.000001"
-                  value={coords.latitude}
-                  onChange={(event) =>
-                    setCoords((current) => ({
-                      ...current,
-                      latitude: Number(event.target.value),
-                    }))
-                  }
-                  className="w-full rounded-2xl border border-white/10 bg-slate-950 px-4 py-3 text-white outline-none"
-                />
-                <input
-                  type="number"
-                  step="0.000001"
-                  value={coords.longitude}
-                  onChange={(event) =>
-                    setCoords((current) => ({
-                      ...current,
-                      longitude: Number(event.target.value),
-                    }))
-                  }
-                  className="w-full rounded-2xl border border-white/10 bg-slate-950 px-4 py-3 text-white outline-none"
-                />
-              </div>
-
-              <div className="mt-4 grid grid-cols-2 gap-2 sm:grid-cols-4">
-                <button
-                  type="button"
-                  onClick={() => nudgeCoords(0.0003, 0)}
-                  className="rounded-2xl border border-white/10 px-3 py-2 text-sm"
-                >
-                  North
-                </button>
-                <button
-                  type="button"
-                  onClick={() => nudgeCoords(-0.0003, 0)}
-                  className="rounded-2xl border border-white/10 px-3 py-2 text-sm"
-                >
-                  South
-                </button>
-                <button
-                  type="button"
-                  onClick={() => nudgeCoords(0, -0.0003)}
-                  className="rounded-2xl border border-white/10 px-3 py-2 text-sm"
-                >
-                  West
-                </button>
-                <button
-                  type="button"
-                  onClick={() => nudgeCoords(0, 0.0003)}
-                  className="rounded-2xl border border-white/10 px-3 py-2 text-sm"
-                >
-                  East
-                </button>
-              </div>
-
-              <button
-                type="button"
-                onClick={sendManualLocation}
-                className="mt-4 inline-flex items-center gap-2 rounded-2xl bg-emerald-400 px-4 py-3 font-semibold text-slate-950"
-              >
-                <Send className="h-4 w-4" />
-                Send Location
-              </button>
             </div>
           </div>
         </div>
-      </div>
+
+        {/* Status indicators */}
+        <div className="grid grid-cols-3 gap-3">
+          {[
+            { label: "Socket", value: socketState, colorMap: SOCKET_COLORS },
+            { label: "Tracker", value: status, colorMap: STATUS_COLORS },
+            { label: "Mode", value: window.isSecureContext ? "GPS ready" : "Manual only", colorMap: {} },
+          ].map(({ label, value, colorMap }) => (
+            <div key={label} className="bg-zinc-900 border border-zinc-800 rounded-xl p-3.5">
+              <p className="text-xs text-zinc-600 uppercase tracking-wide mb-1">{label}</p>
+              <p className={`text-sm font-semibold capitalize ${colorMap[value] || "text-zinc-300"}`}>
+                {value}
+              </p>
+            </div>
+          ))}
+        </div>
+
+        {error && (
+          <div className="text-sm text-amber-400 bg-amber-500/10 border border-amber-500/20 rounded-xl px-4 py-3">
+            {error}
+          </div>
+        )}
+
+        {/* Tracking modes */}
+        <div className="grid gap-3 md:grid-cols-2">
+
+          {/* Browser GPS */}
+          <div className="bg-zinc-900 border border-zinc-800 rounded-2xl p-5">
+            <div className="flex items-center gap-2 mb-3">
+              <Crosshair className="w-4 h-4 text-cyan-400" />
+              <h3 className="text-sm font-semibold text-white">Browser GPS</h3>
+            </div>
+            <p className="text-xs text-zinc-500 leading-relaxed mb-4">
+              Works on localhost or HTTPS. Some phone browsers block GPS on plain HTTP.
+            </p>
+            <div className="flex gap-2">
+              <button
+                type="button"
+                onClick={startBrowserTracking}
+                className="inline-flex items-center gap-1.5 bg-cyan-500 hover:bg-cyan-400 text-zinc-950 font-semibold rounded-xl px-4 py-2 text-sm transition"
+              >
+                <Navigation className="w-3.5 h-3.5" />
+                Start GPS
+              </button>
+              <button
+                type="button"
+                onClick={stopTracking}
+                className="px-4 py-2 rounded-xl border border-zinc-700 text-sm text-zinc-400 hover:text-white hover:border-zinc-600 transition"
+              >
+                Stop
+              </button>
+            </div>
+          </div>
+
+          {/* Manual coords */}
+          <div className="bg-zinc-900 border border-zinc-800 rounded-2xl p-5">
+            <div className="flex items-center gap-2 mb-3">
+              <MapPinned className="w-4 h-4 text-cyan-400" />
+              <h3 className="text-sm font-semibold text-white">Manual Coordinates</h3>
+            </div>
+            <div className="grid grid-cols-2 gap-2 mb-3">
+              <input
+                type="number"
+                step="0.000001"
+                value={coords.latitude}
+                onChange={(e) =>
+                  setCoords((c) => ({ ...c, latitude: Number(e.target.value) }))
+                }
+                className={inputClass}
+              />
+              <input
+                type="number"
+                step="0.000001"
+                value={coords.longitude}
+                onChange={(e) =>
+                  setCoords((c) => ({ ...c, longitude: Number(e.target.value) }))
+                }
+                className={inputClass}
+              />
+            </div>
+            <div className="grid grid-cols-4 gap-1.5 mb-3">
+              {[
+                { label: "N", lat: 0.0003, lng: 0 },
+                { label: "S", lat: -0.0003, lng: 0 },
+                { label: "W", lat: 0, lng: -0.0003 },
+                { label: "E", lat: 0, lng: 0.0003 },
+              ].map(({ label, lat, lng }) => (
+                <button
+                  key={label}
+                  type="button"
+                  onClick={() => nudge(lat, lng)}
+                  className="py-1.5 rounded-lg border border-zinc-700 text-xs text-zinc-400 hover:text-white hover:border-zinc-600 transition"
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+            <button
+              type="button"
+              onClick={() => { joinRide(); emitLocation(coords); }}
+              className="inline-flex items-center gap-1.5 bg-emerald-500 hover:bg-emerald-400 text-zinc-950 font-semibold rounded-xl px-4 py-2 text-sm transition"
+            >
+              <Send className="w-3.5 h-3.5" />
+              Send Location
+            </button>
+          </div>
+        </div>
+      </main>
     </div>
   );
 }

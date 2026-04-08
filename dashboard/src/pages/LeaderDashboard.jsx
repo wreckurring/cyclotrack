@@ -3,60 +3,43 @@ import { useNavigate, useParams } from "react-router-dom";
 import {
   Activity,
   AlertCircle,
-  ArrowLeft,
   Bike,
-  MapPin,
   Navigation,
   WifiOff,
 } from "lucide-react";
 import LiveMap from "../components/LiveMap";
+import Navbar from "../components/Navbar";
 import { useCyclists } from "../hooks/useCyclists";
 import { fetchRide, fetchRides } from "../services/api";
 
-const getStatusConfig = (status) => {
-  switch (status) {
-    case "moving":
-      return {
-        color: "bg-green-500",
-        text: "text-green-700",
-        bg: "bg-green-50",
-        icon: Navigation,
-      };
-    case "slow":
-      return {
-        color: "bg-yellow-400",
-        text: "text-yellow-700",
-        bg: "bg-yellow-50",
-        icon: Activity,
-      };
-    case "stationary":
-      return {
-        color: "bg-red-500",
-        text: "text-red-700",
-        bg: "bg-red-50",
-        icon: AlertCircle,
-      };
-    case "disconnected":
-      return {
-        color: "bg-gray-400",
-        text: "text-gray-700",
-        bg: "bg-gray-50",
-        icon: WifiOff,
-      };
-    default:
-      return {
-        color: "bg-blue-500",
-        text: "text-blue-700",
-        bg: "bg-blue-50",
-        icon: Bike,
-      };
-  }
+const STATUS = {
+  moving: { dot: "bg-emerald-400", text: "text-emerald-400", label: "Moving", Icon: Navigation },
+  slow: { dot: "bg-amber-400", text: "text-amber-400", label: "Slow", Icon: Activity },
+  stationary: { dot: "bg-red-400", text: "text-red-400", label: "Stationary", Icon: AlertCircle },
+  disconnected: { dot: "bg-zinc-600", text: "text-zinc-500", label: "Disconnected", Icon: WifiOff },
 };
+const defaultStatus = { dot: "bg-cyan-400", text: "text-cyan-400", label: "Active", Icon: Bike };
+
+function getStatus(s) {
+  return STATUS[s] || defaultStatus;
+}
+
+function StatCard({ label, value }) {
+  return (
+    <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-4">
+      <p className="text-xs text-zinc-500 uppercase tracking-wide mb-1">{label}</p>
+      <p className="text-sm font-semibold text-white">{value || "—"}</p>
+    </div>
+  );
+}
 
 export default function LeaderDashboard() {
   const { rideId } = useParams();
   const navigate = useNavigate();
-  const cyclists = useCyclists(rideId, rideId ? `leader-viewer-${rideId}` : "leader-viewer");
+  const cyclists = useCyclists(
+    rideId,
+    rideId ? `leader-viewer-${rideId}` : "leader-viewer"
+  );
 
   const [rides, setRides] = useState([]);
   const [ride, setRide] = useState(null);
@@ -65,110 +48,91 @@ export default function LeaderDashboard() {
 
   useEffect(() => {
     let ignore = false;
+    setLoading(true);
+    setError(null);
 
     const load = async () => {
-      setLoading(true);
-      setError(null);
-
       try {
         if (rideId) {
-          const selectedRide = await fetchRide(rideId);
-
-          if (!ignore) {
-            setRide(selectedRide);
-          }
+          const data = await fetchRide(rideId);
+          if (!ignore) setRide(data);
         } else {
-          const rideList = await fetchRides();
-
-          if (!ignore) {
-            setRides(rideList);
-          }
+          const data = await fetchRides();
+          if (!ignore) setRides(data);
         }
-      } catch (loadError) {
-        if (!ignore) {
-          setError(loadError.message || "Unable to load rides.");
-        }
+      } catch (err) {
+        if (!ignore) setError(err.message || "Unable to load rides.");
       } finally {
-        if (!ignore) {
-          setLoading(false);
-        }
+        if (!ignore) setLoading(false);
       }
     };
 
     load();
-
-    return () => {
-      ignore = true;
-    };
+    return () => { ignore = true; };
   }, [rideId]);
 
   const cyclistList = Object.values(cyclists);
-  const activeCyclists = cyclistList.filter(
-    (cyclist) => cyclist.status !== "disconnected",
-  );
+  const activeCount = cyclistList.filter((c) => c.status !== "disconnected").length;
 
   if (!rideId) {
     return (
-      <div className="min-h-screen bg-gray-50 flex flex-col">
-        <header className="bg-white border-b border-gray-200 px-6 py-4 flex items-center justify-between sticky top-0 z-10">
-          <div className="flex items-center gap-3">
-            <MapPin className="w-6 h-6 text-blue-600" />
-            <div>
-              <h1 className="text-xl font-bold text-gray-900">Leader Dashboard</h1>
-              <p className="text-sm text-gray-500">Choose a ride to monitor live.</p>
-            </div>
-          </div>
-        </header>
+      <div className="min-h-screen bg-zinc-950 flex flex-col">
+        <Navbar title="Leader Dashboard" subtitle="Select a ride to monitor" />
 
-        <main className="flex-1 p-6 max-w-6xl mx-auto w-full">
+        <main className="flex-1 p-5 max-w-6xl mx-auto w-full">
           {error && (
-            <div className="mb-4 rounded-2xl border border-red-100 bg-red-50 p-4 text-sm text-red-600">
+            <div className="mb-4 text-sm text-red-400 bg-red-500/10 border border-red-500/20 rounded-xl px-4 py-3">
               {error}
             </div>
           )}
 
           {loading ? (
-            <div className="rounded-2xl border border-gray-200 bg-white p-6 text-sm text-gray-500">
-              Loading rides...
-            </div>
+            <div className="text-sm text-zinc-500 py-12 text-center">Loading rides…</div>
           ) : rides.length === 0 ? (
-            <div className="rounded-2xl border border-dashed border-gray-300 bg-white p-8 text-center text-gray-500">
-              No rides available yet. Ask an admin to create one first.
+            <div className="border border-dashed border-zinc-800 rounded-2xl p-12 text-center">
+              <Bike className="w-8 h-8 text-zinc-700 mx-auto mb-3" />
+              <p className="text-zinc-500 text-sm">No rides yet. Ask an admin to create one.</p>
             </div>
           ) : (
-            <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+            <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
               {rides.map((item) => (
                 <button
                   key={item._id}
                   type="button"
                   onClick={() => navigate(`/leader/${item._id}`)}
-                  className="rounded-2xl border border-gray-200 bg-white p-5 text-left shadow-sm transition hover:-translate-y-1 hover:shadow-md"
+                  className="bg-zinc-900 border border-zinc-800 rounded-2xl p-5 text-left hover:border-zinc-600 hover:-translate-y-0.5 transition group"
                 >
-                  <div className="flex items-start justify-between gap-4">
-                    <div>
-                      <h2 className="text-lg font-semibold text-gray-900">{item.name}</h2>
-                      <p className="mt-1 text-sm text-gray-500">
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <h2 className="font-semibold text-white truncate group-hover:text-cyan-400 transition">
+                        {item.name}
+                      </h2>
+                      <p className="text-sm text-zinc-500 mt-0.5 truncate">
                         {item.destination || "No destination"}
                       </p>
                     </div>
-                    <span className="rounded-full bg-blue-50 px-3 py-1 text-xs font-medium text-blue-700">
+                    <span className={`shrink-0 text-xs font-medium px-2 py-0.5 rounded-full capitalize ${
+                      item.status === "active"
+                        ? "bg-emerald-500/10 text-emerald-400 border border-emerald-500/20"
+                        : "bg-zinc-800 text-zinc-400 border border-zinc-700"
+                    }`}>
                       {item.status || "active"}
                     </span>
                   </div>
-                  <div className="mt-5 grid grid-cols-2 gap-3 text-sm text-gray-600">
+                  <div className="mt-4 grid grid-cols-2 gap-3 pt-4 border-t border-zinc-800">
                     <div>
-                      <div className="text-xs uppercase tracking-wide text-gray-400">Leader</div>
-                      <div className="mt-1 font-medium text-gray-800">
+                      <p className="text-xs text-zinc-600 mb-0.5">Leader</p>
+                      <p className="text-xs font-medium text-zinc-300 truncate">
                         {item.leaderId || "Unassigned"}
-                      </div>
+                      </p>
                     </div>
                     <div>
-                      <div className="text-xs uppercase tracking-wide text-gray-400">Started</div>
-                      <div className="mt-1 font-medium text-gray-800">
+                      <p className="text-xs text-zinc-600 mb-0.5">Started</p>
+                      <p className="text-xs font-medium text-zinc-300">
                         {item.startTime
-                          ? new Date(item.startTime).toLocaleString()
+                          ? new Date(item.startTime).toLocaleTimeString()
                           : "Pending"}
-                      </div>
+                      </p>
                     </div>
                   </div>
                 </button>
@@ -181,118 +145,68 @@ export default function LeaderDashboard() {
   }
 
   return (
-    <div className="min-h-screen bg-gray-50 flex flex-col">
-      <header className="bg-white border-b border-gray-200 px-6 py-4 flex items-center justify-between sticky top-0 z-10">
-        <div className="flex items-center gap-3">
-          <button
-            type="button"
-            onClick={() => navigate("/leader")}
-            className="p-2 rounded-lg bg-gray-50 hover:bg-gray-100 border border-gray-200"
-          >
-            <ArrowLeft className="w-5 h-5 text-gray-600" />
-          </button>
-          <div className="flex items-center gap-2">
-            <Navigation className="w-6 h-6 text-blue-600" />
-            <div>
-              <h1 className="text-xl font-bold text-gray-900">Ride Monitor</h1>
-              <p className="text-sm text-gray-500">{ride?.name || rideId}</p>
-            </div>
-          </div>
-        </div>
-        <div className="rounded-full bg-blue-50 px-3 py-1 text-sm font-medium text-blue-700 border border-blue-100">
-          {activeCyclists.length} active riders
-        </div>
-      </header>
+    <div className="min-h-screen bg-zinc-950 flex flex-col">
+      <Navbar
+        title={ride?.name || "Ride Monitor"}
+        subtitle={ride?.destination}
+        backPath="/leader"
+        badge={`${activeCount} active`}
+      />
 
-      <main className="flex-1 p-6 max-w-7xl mx-auto w-full flex flex-col gap-6">
+      <main className="flex-1 p-5 max-w-7xl mx-auto w-full flex flex-col gap-4">
         {error && (
-          <div className="rounded-2xl border border-red-100 bg-red-50 p-4 text-sm text-red-600">
+          <div className="text-sm text-red-400 bg-red-500/10 border border-red-500/20 rounded-xl px-4 py-3">
             {error}
           </div>
         )}
 
-        <div className="bg-white p-2 rounded-2xl shadow-sm border border-gray-200 h-[55vh] flex flex-col">
-          <div className="flex justify-between items-center px-4 pt-2 pb-4">
-            <div>
-              <h2 className="font-semibold text-gray-800">Live Route Map</h2>
-              <p className="text-sm text-gray-500">
-                {ride?.destination || "Tracking the current ride group."}
-              </p>
-            </div>
-            <span className="text-sm text-gray-500">Ride ID: {rideId}</span>
-          </div>
-          <div className="flex-1 rounded-xl overflow-hidden border border-gray-100">
-            <LiveMap cyclists={cyclists} leaderId={ride?.leaderId} />
-          </div>
+        {/* Map */}
+        <div className="bg-zinc-900 border border-zinc-800 rounded-2xl overflow-hidden" style={{ height: "52vh" }}>
+          <LiveMap cyclists={cyclists} leaderId={ride?.leaderId} />
         </div>
 
-        <div className="grid gap-4 md:grid-cols-3">
-          <div className="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm">
-            <div className="text-xs uppercase tracking-wide text-gray-400">Leader ID</div>
-            <div className="mt-2 text-lg font-semibold text-gray-900">
-              {ride?.leaderId || "Not set"}
-            </div>
-          </div>
-          <div className="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm">
-            <div className="text-xs uppercase tracking-wide text-gray-400">Destination</div>
-            <div className="mt-2 text-lg font-semibold text-gray-900">
-              {ride?.destination || "No destination"}
-            </div>
-          </div>
-          <div className="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm">
-            <div className="text-xs uppercase tracking-wide text-gray-400">Started</div>
-            <div className="mt-2 text-lg font-semibold text-gray-900">
-              {ride?.startTime ? new Date(ride.startTime).toLocaleString() : "Pending"}
-            </div>
-          </div>
+        {/* Stats */}
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+          <StatCard label="Leader" value={ride?.leaderId} />
+          <StatCard label="Destination" value={ride?.destination} />
+          <StatCard
+            label="Started"
+            value={ride?.startTime ? new Date(ride.startTime).toLocaleTimeString() : null}
+          />
+          <StatCard label="Active riders" value={activeCount} />
         </div>
 
+        {/* Cyclists */}
         <div>
-          <h2 className="text-lg font-semibold text-gray-800 mb-4 px-1">Cyclists</h2>
+          <h2 className="text-xs font-medium text-zinc-500 uppercase tracking-wide mb-3">
+            Riders ({cyclistList.length})
+          </h2>
 
           {cyclistList.length === 0 ? (
-            <div className="rounded-2xl border border-dashed border-gray-300 bg-white p-8 text-center text-gray-500">
-              Waiting for riders to join from the mobile app...
+            <div className="border border-dashed border-zinc-800 rounded-2xl p-8 text-center">
+              <p className="text-zinc-600 text-sm">Waiting for riders to join…</p>
             </div>
           ) : (
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+            <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-3">
               {cyclistList.map((cyclist) => {
-                const config = getStatusConfig(cyclist.status);
-                const Icon = config.icon;
-
+                const s = getStatus(cyclist.status);
                 return (
                   <div
                     key={cyclist.cyclistId}
-                    className="bg-white rounded-2xl p-5 shadow-sm border border-gray-200 flex flex-col gap-3"
+                    className="bg-zinc-900 border border-zinc-800 rounded-xl p-4"
                   >
-                    <div className="flex justify-between items-start">
-                      <div>
-                        <p className="text-xs text-gray-400 font-medium uppercase tracking-wider mb-1">
-                          Rider ID
-                        </p>
-                        <p className="font-semibold text-gray-900">{cyclist.cyclistId}</p>
-                      </div>
-                      <div className={`p-2 rounded-lg ${config.bg}`}>
-                        <Icon className={`w-5 h-5 ${config.text}`} />
-                      </div>
+                    <div className="flex items-center justify-between gap-2 mb-3">
+                      <p className="text-sm font-medium text-white truncate">
+                        {cyclist.cyclistId}
+                      </p>
+                      <s.Icon className={`w-4 h-4 shrink-0 ${s.text}`} />
                     </div>
-
-                    <div className="grid grid-cols-2 gap-4 mt-2 pt-4 border-t border-gray-50">
-                      <div>
-                        <p className="text-xs text-gray-400 font-medium mb-1">Speed</p>
-                        <p className="font-medium text-gray-700">
-                          {cyclist.speed.toFixed(1)} m/s
-                        </p>
-                      </div>
-                      <div>
-                        <p className="text-xs text-gray-400 font-medium mb-1">Status</p>
-                        <div className="flex items-center gap-1.5">
-                          <span className={`w-2 h-2 rounded-full ${config.color}`}></span>
-                          <span className={`text-sm font-medium capitalize ${config.text}`}>
-                            {cyclist.status}
-                          </span>
-                        </div>
-                      </div>
+                    <div className="flex items-center justify-between text-xs">
+                      <span className="text-zinc-500">{cyclist.speed.toFixed(1)} m/s</span>
+                      <span className={`flex items-center gap-1 font-medium ${s.text}`}>
+                        <span className={`w-1.5 h-1.5 rounded-full ${s.dot}`} />
+                        {s.label}
+                      </span>
                     </div>
                   </div>
                 );

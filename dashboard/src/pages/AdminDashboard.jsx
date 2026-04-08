@@ -1,175 +1,120 @@
 import React, { useEffect, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
-import { ArrowLeft, List, MapPin, Plus } from "lucide-react";
+import { Plus } from "lucide-react";
 import LiveMap from "../components/LiveMap";
+import Navbar from "../components/Navbar";
 import { useCyclists } from "../hooks/useCyclists";
 import { createRide, fetchRide, fetchRides } from "../services/api";
+
+function StatCard({ label, value }) {
+  return (
+    <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-4">
+      <p className="text-xs text-zinc-500 uppercase tracking-wide mb-1">{label}</p>
+      <p className="text-sm font-semibold text-white">{value || "—"}</p>
+    </div>
+  );
+}
 
 export default function AdminDashboard() {
   const { rideId } = useParams();
   const navigate = useNavigate();
-  const cyclists = useCyclists(rideId, rideId ? `admin-viewer-${rideId}` : "admin-viewer");
+  const cyclists = useCyclists(
+    rideId,
+    rideId ? `admin-viewer-${rideId}` : "admin-viewer"
+  );
 
   const [rides, setRides] = useState([]);
+  const [ride, setRide] = useState(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
-  const [ride, setRide] = useState(null);
   const [form, setForm] = useState({ name: "", destination: "", leaderId: "" });
   const [creating, setCreating] = useState(false);
 
   useEffect(() => {
     let ignore = false;
+    setLoading(true);
+    setError(null);
 
     const load = async () => {
-      setLoading(true);
-      setError(null);
-
       try {
         if (rideId) {
-          const selectedRide = await fetchRide(rideId);
-          if (!ignore) {
-            setRide(selectedRide);
-          }
+          const data = await fetchRide(rideId);
+          if (!ignore) setRide(data);
         } else {
-          const rideList = await fetchRides();
-          if (!ignore) {
-            setRides(rideList);
-          }
+          const data = await fetchRides();
+          if (!ignore) setRides(data);
         }
-      } catch (loadError) {
-        if (!ignore) {
-          setError(loadError.message || "Unable to fetch rides.");
-        }
+      } catch (err) {
+        if (!ignore) setError(err.message || "Unable to fetch rides.");
       } finally {
-        if (!ignore) {
-          setLoading(false);
-        }
+        if (!ignore) setLoading(false);
       }
     };
 
     load();
-
-    return () => {
-      ignore = true;
-    };
+    return () => { ignore = true; };
   }, [rideId]);
 
-  const activeCyclists = Object.values(cyclists).filter(
-    (cyclist) => cyclist.status !== "disconnected",
-  );
+  const activeCount = Object.values(cyclists).filter(
+    (c) => c.status !== "disconnected"
+  ).length;
 
-  const handleCreateRide = async () => {
-    if (!form.name.trim()) {
-      return;
-    }
-
+  const handleCreate = async () => {
+    if (!form.name.trim()) return;
     setCreating(true);
     setError(null);
-
     try {
       const newRide = await createRide({
         name: form.name.trim(),
         destination: form.destination.trim(),
         leaderId: form.leaderId.trim(),
       });
-
       setRides((prev) => [newRide, ...prev]);
       setForm({ name: "", destination: "", leaderId: "" });
       navigate(`/admin/${newRide._id}`);
-    } catch (createError) {
-      setError(createError.message || "Could not create ride.");
+    } catch (err) {
+      setError(err.message || "Could not create ride.");
     } finally {
       setCreating(false);
     }
   };
 
+  const inputClass =
+    "w-full bg-zinc-800 border border-zinc-700 rounded-xl px-3 py-2.5 text-sm text-white placeholder-zinc-600 focus:outline-none focus:ring-2 focus:ring-cyan-500/30 focus:border-cyan-500/50 transition";
+
   if (rideId) {
     return (
-      <div className="min-h-screen bg-gray-50 flex flex-col">
-        <header className="bg-white border-b border-gray-200 px-6 py-4 flex items-center justify-between sticky top-0 z-10">
-          <div className="flex items-center gap-3">
-            <button
-              type="button"
-              onClick={() => navigate("/admin")}
-              className="p-2 rounded-lg bg-gray-50 hover:bg-gray-100 border border-gray-200"
-            >
-              <ArrowLeft className="w-5 h-5 text-gray-600" />
-            </button>
-            <div className="flex items-center gap-2">
-              <MapPin className="w-6 h-6 text-blue-600" />
-              <div>
-                <h1 className="text-xl font-bold text-gray-900">Trip Monitor</h1>
-                <p className="text-sm text-gray-500">Ride ID: {rideId}</p>
-              </div>
-            </div>
-          </div>
-          <div className="rounded-full bg-blue-50 px-3 py-1 text-sm font-medium text-blue-700 border border-blue-100">
-            {activeCyclists.length} active riders
-          </div>
-        </header>
+      <div className="min-h-screen bg-zinc-950 flex flex-col">
+        <Navbar
+          title={ride?.name || "Trip Monitor"}
+          subtitle={`Ride ID: ${rideId}`}
+          backPath="/admin"
+          badge={`${activeCount} active`}
+        />
 
-        <main className="flex-1 p-6 max-w-7xl mx-auto w-full flex flex-col gap-6">
+        <main className="flex-1 p-5 max-w-7xl mx-auto w-full flex flex-col gap-4">
           {error && (
-            <div className="text-sm text-red-600 bg-red-50 border border-red-100 rounded-xl p-4">
+            <div className="text-sm text-red-400 bg-red-500/10 border border-red-500/20 rounded-xl px-4 py-3">
               {error}
             </div>
           )}
 
-          <div className="bg-white p-2 rounded-2xl shadow-sm border border-gray-200 h-[50vh] flex flex-col">
-            <div className="flex justify-between items-center px-4 pt-2 pb-4">
-              <div>
-                <h2 className="font-semibold text-gray-800">Live Trip Map</h2>
-                <p className="text-sm text-gray-500">
-                  {ride?.destination || "Tracking all active riders on this ride."}
-                </p>
-              </div>
-              <span className="text-sm text-gray-500">Monitoring ride activity</span>
-            </div>
-            <div className="flex-1 rounded-xl overflow-hidden border border-gray-100">
-              <LiveMap cyclists={cyclists} leaderId={ride?.leaderId} />
-            </div>
+          {/* Map */}
+          <div className="bg-zinc-900 border border-zinc-800 rounded-2xl overflow-hidden" style={{ height: "50vh" }}>
+            <LiveMap cyclists={cyclists} leaderId={ride?.leaderId} />
           </div>
 
-          <div className="bg-white rounded-2xl shadow-sm border border-gray-200 p-6">
-            <div>
-              <h2 className="text-lg font-semibold text-gray-900">Trip Details</h2>
-              <p className="text-sm text-gray-500 mt-1">
-                Real-time ride overview for operations and support.
-              </p>
-            </div>
-
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mt-6">
-              <div className="space-y-1">
-                <p className="text-xs font-medium text-gray-500 uppercase">Trip Name</p>
-                <p className="text-sm font-semibold text-gray-900">{ride?.name || "-"}</p>
-              </div>
-              <div className="space-y-1">
-                <p className="text-xs font-medium text-gray-500 uppercase">Destination</p>
-                <p className="text-sm font-semibold text-gray-900">
-                  {ride?.destination || "-"}
-                </p>
-              </div>
-              <div className="space-y-1">
-                <p className="text-xs font-medium text-gray-500 uppercase">Ride Leader</p>
-                <p className="text-sm font-semibold text-gray-900">{ride?.leaderId || "-"}</p>
-              </div>
-              <div className="space-y-1">
-                <p className="text-xs font-medium text-gray-500 uppercase">Started</p>
-                <p className="text-sm font-semibold text-gray-900">
-                  {ride?.startTime ? new Date(ride.startTime).toLocaleString() : "-"}
-                </p>
-              </div>
-              <div className="space-y-1">
-                <p className="text-xs font-medium text-gray-500 uppercase">Active Riders</p>
-                <p className="text-sm font-semibold text-gray-900">{activeCyclists.length}</p>
-              </div>
-              <div className="space-y-1">
-                <p className="text-xs font-medium text-gray-500 uppercase">Status</p>
-                <p className="text-sm font-semibold text-gray-900 capitalize">
-                  {ride?.status || "active"}
-                </p>
-              </div>
-            </div>
+          {/* Stats */}
+          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
+            <StatCard label="Trip Name" value={ride?.name} />
+            <StatCard label="Destination" value={ride?.destination} />
+            <StatCard label="Leader" value={ride?.leaderId} />
+            <StatCard
+              label="Started"
+              value={ride?.startTime ? new Date(ride.startTime).toLocaleTimeString() : null}
+            />
+            <StatCard label="Active riders" value={activeCount} />
+            <StatCard label="Status" value={ride?.status} />
           </div>
         </main>
       </div>
@@ -177,112 +122,110 @@ export default function AdminDashboard() {
   }
 
   return (
-    <div className="min-h-screen bg-gray-50 flex flex-col">
-      <header className="bg-white border-b border-gray-200 px-6 py-4 flex items-center justify-between sticky top-0 z-10">
-        <div className="flex items-center gap-2">
-          <List className="w-6 h-6 text-blue-600" />
-          <div>
-            <h1 className="text-xl font-bold text-gray-900">Admin Dashboard</h1>
-            <p className="text-sm text-gray-500">Create rides and open any live monitor.</p>
-          </div>
-        </div>
-      </header>
+    <div className="min-h-screen bg-zinc-950 flex flex-col">
+      <Navbar title="Admin Dashboard" subtitle="Create rides and monitor trips" />
 
-      <main className="flex-1 p-6 max-w-7xl mx-auto w-full flex flex-col gap-6">
-        <div className="bg-white rounded-2xl shadow-sm border border-gray-200 p-6">
-          <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-            <div>
-              <h2 className="text-lg font-semibold text-gray-900">Rides</h2>
-              <p className="text-sm text-gray-500">
-                Start a new trip or reopen an active ride monitor.
-              </p>
-            </div>
-            <div className="flex flex-col sm:flex-row gap-2">
-              <input
-                value={form.name}
-                onChange={(event) =>
-                  setForm((prev) => ({ ...prev, name: event.target.value }))
-                }
-                placeholder="Ride name"
-                className="w-full sm:w-auto border border-gray-200 rounded-lg px-4 py-2 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none bg-gray-50"
-              />
-              <input
-                value={form.destination}
-                onChange={(event) =>
-                  setForm((prev) => ({ ...prev, destination: event.target.value }))
-                }
-                placeholder="Destination"
-                className="w-full sm:w-auto border border-gray-200 rounded-lg px-4 py-2 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none bg-gray-50"
-              />
-              <input
-                value={form.leaderId}
-                onChange={(event) =>
-                  setForm((prev) => ({ ...prev, leaderId: event.target.value }))
-                }
-                placeholder="Leader ID"
-                className="w-full sm:w-auto border border-gray-200 rounded-lg px-4 py-2 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none bg-gray-50"
-              />
-              <button
-                type="button"
-                onClick={handleCreateRide}
-                disabled={creating || !form.name.trim()}
-                className="inline-flex items-center justify-center gap-2 px-4 py-2 rounded-lg bg-blue-600 text-white font-medium hover:bg-blue-700 disabled:opacity-50"
-              >
-                <Plus className="w-4 h-4" />
-                {creating ? "Creating..." : "Create Trip"}
-              </button>
-            </div>
+      <main className="flex-1 p-5 max-w-7xl mx-auto w-full flex flex-col gap-5">
+
+        {/* Create ride form */}
+        <div className="bg-zinc-900 border border-zinc-800 rounded-2xl p-5">
+          <h2 className="text-sm font-semibold text-white mb-4">New Ride</h2>
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+            <input
+              value={form.name}
+              onChange={(e) => setForm((p) => ({ ...p, name: e.target.value }))}
+              placeholder="Ride name *"
+              className={inputClass}
+            />
+            <input
+              value={form.destination}
+              onChange={(e) => setForm((p) => ({ ...p, destination: e.target.value }))}
+              placeholder="Destination"
+              className={inputClass}
+            />
+            <input
+              value={form.leaderId}
+              onChange={(e) => setForm((p) => ({ ...p, leaderId: e.target.value }))}
+              placeholder="Leader ID"
+              className={inputClass}
+            />
+            <button
+              type="button"
+              onClick={handleCreate}
+              disabled={creating || !form.name.trim()}
+              className="inline-flex items-center justify-center gap-2 bg-cyan-500 hover:bg-cyan-400 disabled:opacity-40 disabled:cursor-not-allowed text-zinc-950 font-semibold rounded-xl px-4 py-2.5 text-sm transition"
+            >
+              <Plus className="w-4 h-4" />
+              {creating ? "Creating…" : "Create Ride"}
+            </button>
           </div>
 
           {error && (
-            <div className="mt-4 text-sm text-red-600 bg-red-50 border border-red-100 rounded-xl p-4">
+            <div className="mt-3 text-sm text-red-400 bg-red-500/10 border border-red-500/20 rounded-xl px-4 py-3">
               {error}
             </div>
           )}
+        </div>
 
-          <div className="mt-6">
-            {loading ? (
-              <div className="text-sm text-gray-500">Loading rides...</div>
-            ) : rides.length === 0 ? (
-              <div className="text-sm text-gray-500">
-                No rides found. Create one using the form above.
-              </div>
-            ) : (
-              <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
-                {rides.map((item) => (
-                  <button
-                    key={item._id}
-                    type="button"
-                    onClick={() => navigate(`/admin/${item._id}`)}
-                    className="text-left bg-white border border-gray-200 rounded-2xl p-5 shadow-sm hover:shadow-md transition"
-                  >
-                    <div className="flex items-start justify-between gap-3">
-                      <div>
-                        <h3 className="text-base font-semibold text-gray-900">{item.name}</h3>
-                        <p className="text-sm text-gray-500 mt-1">
-                          {item.destination || "No destination"}
-                        </p>
-                      </div>
-                      <div className="text-xs text-gray-400">ID: {item._id.slice(0, 6)}</div>
+        {/* Rides list */}
+        <div>
+          <h2 className="text-xs font-medium text-zinc-500 uppercase tracking-wide mb-3">
+            All Rides
+          </h2>
+
+          {loading ? (
+            <div className="text-sm text-zinc-500 py-8 text-center">Loading rides…</div>
+          ) : rides.length === 0 ? (
+            <div className="border border-dashed border-zinc-800 rounded-2xl p-10 text-center">
+              <p className="text-zinc-600 text-sm">No rides found. Create one above.</p>
+            </div>
+          ) : (
+            <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+              {rides.map((item) => (
+                <button
+                  key={item._id}
+                  type="button"
+                  onClick={() => navigate(`/admin/${item._id}`)}
+                  className="bg-zinc-900 border border-zinc-800 rounded-2xl p-5 text-left hover:border-zinc-600 hover:-translate-y-0.5 transition group"
+                >
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <h3 className="font-semibold text-white truncate group-hover:text-cyan-400 transition">
+                        {item.name}
+                      </h3>
+                      <p className="text-sm text-zinc-500 mt-0.5 truncate">
+                        {item.destination || "No destination"}
+                      </p>
                     </div>
-                    <div className="mt-4 grid grid-cols-2 gap-3 text-sm text-gray-600">
-                      <div>
-                        <div className="font-medium text-gray-800">Leader</div>
-                        <div>{item.leaderId || "-"}</div>
-                      </div>
-                      <div>
-                        <div className="font-medium text-gray-800">Status</div>
-                        <div className="capitalize">{item.status || "active"}</div>
-                      </div>
+                    <span className={`shrink-0 text-xs font-medium px-2 py-0.5 rounded-full capitalize ${
+                      item.status === "active"
+                        ? "bg-emerald-500/10 text-emerald-400 border border-emerald-500/20"
+                        : "bg-zinc-800 text-zinc-400 border border-zinc-700"
+                    }`}>
+                      {item.status || "active"}
+                    </span>
+                  </div>
+                  <div className="mt-4 grid grid-cols-2 gap-3 pt-4 border-t border-zinc-800">
+                    <div>
+                      <p className="text-xs text-zinc-600 mb-0.5">Leader</p>
+                      <p className="text-xs font-medium text-zinc-300 truncate">
+                        {item.leaderId || "Unassigned"}
+                      </p>
                     </div>
-                    <div className="mt-4 text-xs text-gray-400">
-                      {item.startTime ? new Date(item.startTime).toLocaleString() : "-"}
+                    <div>
+                      <p className="text-xs text-zinc-600 mb-0.5">Started</p>
+                      <p className="text-xs font-medium text-zinc-300">
+                        {item.startTime
+                          ? new Date(item.startTime).toLocaleTimeString()
+                          : "Pending"}
+                      </p>
                     </div>
-                  </button>
-                ))}
-              </div>
-            )}
-          </div>
+                  </div>
+                  <p className="mt-3 text-xs text-zinc-700 font-mono">{item._id}</p>
+                </button>
+              ))}
+            </div>
+          )}
         </div>
       </main>
     </div>

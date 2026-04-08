@@ -1,119 +1,132 @@
 import React, { useEffect, useState } from "react";
-import { useNavigate } from "react-router-dom";
-import { Bike, LogOut, MapPinned } from "lucide-react";
+import { Bike, Copy, MapPin } from "lucide-react";
+import Navbar from "../components/Navbar";
 import { fetchRides } from "../services/api";
 
 export default function CyclistDashboard() {
-  const navigate = useNavigate();
   const [rides, setRides] = useState([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
+  const [copied, setCopied] = useState(null);
 
   useEffect(() => {
     let ignore = false;
+    setLoading(true);
 
-    const loadRides = async () => {
-      setLoading(true);
-      setError(null);
-
+    const load = async () => {
       try {
-        const rideList = await fetchRides();
-        if (!ignore) {
-          setRides(rideList);
-        }
-      } catch (loadError) {
-        if (!ignore) {
-          setError(loadError.message || "Unable to fetch rides.");
-        }
+        const data = await fetchRides();
+        if (!ignore) setRides(data);
+      } catch (err) {
+        if (!ignore) setError(err.message || "Unable to fetch rides.");
       } finally {
-        if (!ignore) {
-          setLoading(false);
-        }
+        if (!ignore) setLoading(false);
       }
     };
 
-    loadRides();
-
-    return () => {
-      ignore = true;
-    };
+    load();
+    return () => { ignore = true; };
   }, []);
 
-  return (
-    <div className="min-h-screen bg-gray-50 flex flex-col items-center p-4 sm:p-6">
-      <div className="max-w-4xl w-full space-y-6">
-        <div className="bg-white p-6 rounded-3xl shadow-sm border border-gray-200">
-          <div className="flex items-start justify-between gap-4">
-            <div>
-              <div className="inline-flex rounded-2xl bg-blue-50 p-3 text-blue-600">
-                <Bike className="w-7 h-7" />
-              </div>
-              <h1 className="mt-4 text-3xl font-bold text-gray-900">Rider Workspace</h1>
-              <p className="mt-2 text-gray-500">
-                Join one of the active rides from the mobile app. Use the ride ID below
-                and enter your rider name or ID in the tracker.
-              </p>
-            </div>
-            <button
-              type="button"
-              onClick={() => navigate("/")}
-              className="flex items-center justify-center gap-2 text-gray-600 hover:text-gray-900 font-medium transition-colors border border-gray-200 hover:bg-gray-50 rounded-lg px-4 py-2.5"
-            >
-              <LogOut className="w-4 h-4" /> Back
-            </button>
-          </div>
-        </div>
+  const copyId = (id) => {
+    navigator.clipboard.writeText(id).then(() => {
+      setCopied(id);
+      setTimeout(() => setCopied(null), 2000);
+    });
+  };
 
+  return (
+    <div className="min-h-screen bg-zinc-950 flex flex-col">
+      <Navbar title="Rider Workspace" subtitle="Active rides you can join" />
+
+      <main className="flex-1 p-5 max-w-4xl mx-auto w-full">
         {error && (
-          <div className="rounded-2xl border border-red-100 bg-red-50 p-4 text-sm text-red-600">
+          <div className="mb-4 text-sm text-red-400 bg-red-500/10 border border-red-500/20 rounded-xl px-4 py-3">
             {error}
           </div>
         )}
 
-        <div className="bg-white p-6 rounded-3xl shadow-sm border border-gray-200">
-          <div className="flex items-center gap-3">
-            <MapPinned className="w-5 h-5 text-blue-600" />
-            <h2 className="text-lg font-semibold text-gray-900">Available Rides</h2>
+        {loading ? (
+          <div className="text-sm text-zinc-500 py-12 text-center">Loading rides…</div>
+        ) : rides.length === 0 ? (
+          <div className="border border-dashed border-zinc-800 rounded-2xl p-12 text-center">
+            <Bike className="w-8 h-8 text-zinc-700 mx-auto mb-3" />
+            <p className="text-zinc-500 text-sm">No rides available.</p>
+            <p className="text-zinc-700 text-xs mt-1">Ask your admin to create a ride.</p>
           </div>
+        ) : (
+          <>
+            <p className="text-xs text-zinc-600 mb-4">
+              Copy a Ride ID and enter it in the mobile tracker to join.
+            </p>
+            <div className="grid gap-3 md:grid-cols-2">
+              {rides.map((ride) => (
+                <div
+                  key={ride._id}
+                  className="bg-zinc-900 border border-zinc-800 rounded-2xl p-5"
+                >
+                  <div className="flex items-start gap-3">
+                    <div className="mt-0.5 p-2 rounded-lg bg-cyan-500/10">
+                      <MapPin className="w-4 h-4 text-cyan-400" />
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <h3 className="font-semibold text-white truncate">{ride.name}</h3>
+                      <p className="text-sm text-zinc-500 mt-0.5">
+                        {ride.destination || "No destination"}
+                      </p>
+                    </div>
+                    <span className={`shrink-0 text-xs font-medium px-2 py-0.5 rounded-full ${
+                      ride.status === "active"
+                        ? "bg-emerald-500/10 text-emerald-400 border border-emerald-500/20"
+                        : "bg-zinc-800 text-zinc-400 border border-zinc-700"
+                    }`}>
+                      {ride.status || "active"}
+                    </span>
+                  </div>
 
-          <div className="mt-5">
-            {loading ? (
-              <div className="text-sm text-gray-500">Loading rides...</div>
-            ) : rides.length === 0 ? (
-              <div className="rounded-2xl border border-dashed border-gray-300 p-6 text-center text-gray-500">
-                No rides are available yet. Ask your club admin to create a ride.
-              </div>
-            ) : (
-              <div className="grid gap-4 md:grid-cols-2">
-                {rides.map((ride) => (
-                  <div
-                    key={ride._id}
-                    className="rounded-2xl border border-gray-200 bg-gray-50 p-5"
-                  >
-                    <h3 className="text-lg font-semibold text-gray-900">{ride.name}</h3>
-                    <p className="mt-1 text-sm text-gray-500">
-                      {ride.destination || "No destination"}
-                    </p>
-                    <div className="mt-4 space-y-2 text-sm text-gray-700">
+                  <div className="mt-4 pt-4 border-t border-zinc-800 space-y-2.5">
+                    <div className="flex items-center justify-between gap-3">
+                      <div className="min-w-0">
+                        <p className="text-xs text-zinc-600 mb-0.5">Ride ID</p>
+                        <p className="text-xs font-mono text-zinc-300 truncate">{ride._id}</p>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => copyId(ride._id)}
+                        className={`shrink-0 flex items-center gap-1.5 text-xs font-medium px-2.5 py-1.5 rounded-lg border transition ${
+                          copied === ride._id
+                            ? "bg-emerald-500/10 border-emerald-500/20 text-emerald-400"
+                            : "bg-zinc-800 border-zinc-700 text-zinc-400 hover:text-white hover:border-zinc-600"
+                        }`}
+                      >
+                        <Copy className="w-3 h-3" />
+                        {copied === ride._id ? "Copied" : "Copy"}
+                      </button>
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-3">
                       <div>
-                        <span className="font-medium">Ride ID:</span> {ride._id}
+                        <p className="text-xs text-zinc-600 mb-0.5">Leader</p>
+                        <p className="text-xs font-medium text-zinc-400">
+                          {ride.leaderId || "Not assigned"}
+                        </p>
                       </div>
                       <div>
-                        <span className="font-medium">Leader ID:</span>{" "}
-                        {ride.leaderId || "Not assigned"}
-                      </div>
-                      <div>
-                        <span className="font-medium">Started:</span>{" "}
-                        {ride.startTime ? new Date(ride.startTime).toLocaleString() : "Pending"}
+                        <p className="text-xs text-zinc-600 mb-0.5">Started</p>
+                        <p className="text-xs font-medium text-zinc-400">
+                          {ride.startTime
+                            ? new Date(ride.startTime).toLocaleTimeString()
+                            : "Pending"}
+                        </p>
                       </div>
                     </div>
                   </div>
-                ))}
-              </div>
-            )}
-          </div>
-        </div>
-      </div>
+                </div>
+              ))}
+            </div>
+          </>
+        )}
+      </main>
     </div>
   );
 }
