@@ -36,6 +36,8 @@ const createRide = async (req, res) => {
       name: trimmedName,
       destination: destination?.trim() || "Unknown",
       leaderId: leaderId?.trim() || "",
+      note: "",
+      noteAuthor: "",
       participants: [],
     });
 

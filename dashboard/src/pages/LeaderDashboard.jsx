@@ -1,26 +1,74 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
-import { Activity, AlertCircle, Bike, CheckCircle2, Navigation, WifiOff } from "lucide-react";
+import {
+  Activity,
+  AlertCircle,
+  Bike,
+  CheckCircle2,
+  Navigation,
+  Send,
+  WifiOff,
+} from "lucide-react";
 import LiveMap from "../components/LiveMap";
 import Navbar from "../components/Navbar";
 import NotificationStack from "../components/NotificationStack";
 import { useCyclists } from "../hooks/useCyclists";
 import { completeRide, fetchRide, fetchRides } from "../services/api";
+import { getSocket } from "../services/socketService";
+import { useAuth } from "../context/AuthContext";
 
 const STATUS = {
-  moving:       { dot: "bg-g-green",  text: "text-g-green",  chip: "bg-g-green-tint text-g-green",  label: "Moving",       Icon: Navigation  },
-  slow:         { dot: "bg-g-yellow", text: "text-g-yellow", chip: "bg-g-yellow-tint text-g-yellow", label: "Slow",         Icon: Activity    },
-  stationary:   { dot: "bg-g-red",    text: "text-g-red",    chip: "bg-g-red-tint text-g-red",       label: "Stationary",   Icon: AlertCircle },
-  disconnected: { dot: "bg-g-gray",   text: "text-g-gray",   chip: "bg-g-gray-tint text-g-gray",     label: "Disconnected", Icon: WifiOff     },
+  moving: {
+    dot: "bg-g-green",
+    text: "text-g-green",
+    chip: "bg-g-green-tint text-g-green",
+    label: "Moving",
+    Icon: Navigation,
+  },
+  slow: {
+    dot: "bg-g-yellow",
+    text: "text-g-yellow",
+    chip: "bg-g-yellow-tint text-g-yellow",
+    label: "Slow",
+    Icon: Activity,
+  },
+  stationary: {
+    dot: "bg-g-red",
+    text: "text-g-red",
+    chip: "bg-g-red-tint text-g-red",
+    label: "Stationary",
+    Icon: AlertCircle,
+  },
+  disconnected: {
+    dot: "bg-g-gray",
+    text: "text-g-gray",
+    chip: "bg-g-gray-tint text-g-gray",
+    label: "Disconnected",
+    Icon: WifiOff,
+  },
 };
-const DEF = { dot: "bg-g-blue", text: "text-g-blue", chip: "bg-g-blue-tint text-g-blue", label: "Active", Icon: Bike };
+const DEF = {
+  dot: "bg-g-blue",
+  text: "text-g-blue",
+  chip: "bg-g-blue-tint text-g-blue",
+  label: "Active",
+  Icon: Bike,
+};
+const STATUS_ORDER = {
+  stationary: 0,
+  disconnected: 1,
+  slow: 2,
+  moving: 3,
+};
 
-const gs = (s) => STATUS[s] || DEF;
+const gs = (status) => STATUS[status] || DEF;
 
 function StatCard({ label, value }) {
   return (
     <div className="bg-g-surface rounded-2xl shadow-g-card px-5 py-4">
-      <p className="text-xs font-medium text-g-faint uppercase tracking-wide mb-1">{label}</p>
+      <p className="text-xs font-medium text-g-faint uppercase tracking-wide mb-1">
+        {label}
+      </p>
       <p className="text-sm font-medium text-g-ink">{value || "—"}</p>
     </div>
   );
@@ -29,12 +77,27 @@ function StatCard({ label, value }) {
 export default function LeaderDashboard() {
   const { rideId } = useParams();
   const navigate = useNavigate();
+  const { user } = useAuth();
+
   const [rides, setRides] = useState([]);
-  const [ride, setRide]   = useState(null);
+  const [ride, setRide] = useState(null);
   const [loading, setLoading] = useState(false);
-  const [error, setError]     = useState(null);
+  const [error, setError] = useState(null);
   const [notifications, setNotifications] = useState([]);
   const [completing, setCompleting] = useState(false);
+  const [noteDraft, setNoteDraft] = useState("");
+  const [selectedCyclistId, setSelectedCyclistId] = useState(null);
+  const [followNonce, setFollowNonce] = useState(0);
+
+  const pushNotification = (title, message) => {
+    const id = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+
+    setNotifications((prev) => [{ id, title, message }, ...prev].slice(0, 4));
+
+    setTimeout(() => {
+      setNotifications((prev) => prev.filter((item) => item.id !== id));
+    }, 5000);
+  };
 
   const liveRideId = ride?.status === "completed" ? null : rideId;
   const cyclists = useCyclists(
@@ -42,39 +105,78 @@ export default function LeaderDashboard() {
     rideId ? `leader-viewer-${rideId}` : "leader-viewer",
     {
       onCyclistDisconnected: ({ cyclistId }) => {
-        const id = `${Date.now()}-${cyclistId}`;
-        setNotifications((prev) => [
-          {
-            id,
-            title: "Rider disconnected",
-            message: `${cyclistId} went offline during the ride.`,
-          },
-          ...prev,
-        ].slice(0, 4));
-
-        setTimeout(() => {
-          setNotifications((prev) => prev.filter((item) => item.id !== id));
-        }, 5000);
+        pushNotification("Rider disconnected", `${cyclistId} went offline during the ride.`);
+      },
+      onRideNote: ({ author, message, timestamp }) => {
+        setRide((prev) =>
+          prev
+            ? {
+                ...prev,
+                note: message,
+                noteAuthor: author,
+                noteUpdatedAt: new Date(timestamp).toISOString(),
+              }
+            : prev,
+        );
+        pushNotification("Ride note", `${author}: ${message}`);
       },
     },
   );
 
   useEffect(() => {
     let ignore = false;
-    setLoading(true); setError(null);
+    setLoading(true);
+    setError(null);
+
     const load = async () => {
       try {
-        if (rideId) { const d = await fetchRide(rideId);  if (!ignore) setRide(d); }
-        else        { const d = await fetchRides();        if (!ignore) setRides(d); }
-      } catch (err) { if (!ignore) setError(err.message || "Unable to load rides."); }
-      finally       { if (!ignore) setLoading(false); }
+        if (rideId) {
+          const data = await fetchRide(rideId);
+          if (!ignore) {
+            setRide(data);
+            setNoteDraft(data.note || "");
+          }
+        } else {
+          const data = await fetchRides();
+          if (!ignore) {
+            setRides(data);
+          }
+        }
+      } catch (loadError) {
+        if (!ignore) {
+          setError(loadError.message || "Unable to load rides.");
+        }
+      } finally {
+        if (!ignore) {
+          setLoading(false);
+        }
+      }
     };
+
     load();
-    return () => { ignore = true; };
+
+    return () => {
+      ignore = true;
+    };
   }, [rideId]);
 
-  const cyclistList = Object.values(cyclists);
-  const activeCount = cyclistList.filter((c) => c.status !== "disconnected").length;
+  const cyclistList = useMemo(() => Object.values(cyclists), [cyclists]);
+  const sortedCyclists = useMemo(
+    () =>
+      [...cyclistList].sort((a, b) => {
+        const statusDiff =
+          (STATUS_ORDER[a.status] ?? 99) - (STATUS_ORDER[b.status] ?? 99);
+
+        if (statusDiff !== 0) {
+          return statusDiff;
+        }
+
+        return a.cyclistId.localeCompare(b.cyclistId);
+      }),
+    [cyclistList],
+  );
+
+  const totalRiders = sortedCyclists.length;
 
   const handleCompleteRide = async () => {
     if (!rideId || ride?.status === "completed") {
@@ -87,34 +189,50 @@ export default function LeaderDashboard() {
     try {
       const updatedRide = await completeRide(rideId);
       setRide(updatedRide);
-
-      const id = `${Date.now()}-ride-complete`;
-      setNotifications((prev) => [
-        {
-          id,
-          title: "Ride completed",
-          message: `${updatedRide.name} has been marked as completed.`,
-        },
-        ...prev,
-      ].slice(0, 4));
-
-      setTimeout(() => {
-        setNotifications((prev) => prev.filter((item) => item.id !== id));
-      }, 5000);
-    } catch (err) {
-      setError(err.message || "Unable to complete the ride.");
+      pushNotification("Ride completed", `${updatedRide.name} has been marked as completed.`);
+    } catch (completionError) {
+      setError(completionError.message || "Unable to complete the ride.");
     } finally {
       setCompleting(false);
     }
   };
 
-  /* ── Rides list ── */
+  const handleSendNote = () => {
+    const message = noteDraft.trim();
+
+    if (!rideId || !message) {
+      return;
+    }
+
+    getSocket().emit("rideNote", {
+      rideId,
+      message,
+      author: user?.username || ride?.leaderId || "Ride leader",
+    });
+  };
+
+  const handleCyclistCardClick = (cyclistId) => {
+    setSelectedCyclistId((current) => {
+      if (current === cyclistId) {
+        return null;
+      }
+
+      return cyclistId;
+    });
+
+    setFollowNonce((current) => current + 1);
+  };
+
   if (!rideId) {
     return (
       <div className="min-h-screen bg-g-bg flex flex-col">
         <Navbar title="Leader Dashboard" subtitle="Select a ride to monitor" />
         <main className="flex-1 p-5 max-w-6xl mx-auto w-full">
-          {error && <div className="mb-4 text-sm text-g-red bg-g-red-tint rounded-xl px-4 py-3">{error}</div>}
+          {error && (
+            <div className="mb-4 text-sm text-g-red bg-g-red-tint rounded-xl px-4 py-3">
+              {error}
+            </div>
+          )}
 
           {loading ? (
             <p className="text-sm text-g-faint py-12 text-center">Loading rides…</p>
@@ -141,21 +259,29 @@ export default function LeaderDashboard() {
                         {item.destination || "No destination"}
                       </p>
                     </div>
-                    <span className={`shrink-0 text-xs font-medium px-2.5 py-0.5 rounded-full capitalize ${
-                      item.status === "active" ? "bg-g-green-tint text-g-green" : "bg-g-bg text-g-muted"
-                    }`}>
+                    <span
+                      className={`shrink-0 text-xs font-medium px-2.5 py-0.5 rounded-full capitalize ${
+                        item.status === "active"
+                          ? "bg-g-green-tint text-g-green"
+                          : "bg-g-bg text-g-muted"
+                      }`}
+                    >
                       {item.status || "active"}
                     </span>
                   </div>
                   <div className="mt-4 grid grid-cols-2 gap-3 pt-4 border-t border-g-bg">
                     <div>
                       <p className="text-xs text-g-faint mb-0.5">Leader</p>
-                      <p className="text-xs font-medium text-g-ink-2 truncate">{item.leaderId || "Unassigned"}</p>
+                      <p className="text-xs font-medium text-g-ink-2 truncate">
+                        {item.leaderId || "Unassigned"}
+                      </p>
                     </div>
                     <div>
                       <p className="text-xs text-g-faint mb-0.5">Started</p>
                       <p className="text-xs font-medium text-g-ink-2">
-                        {item.startTime ? new Date(item.startTime).toLocaleTimeString() : "Pending"}
+                        {item.startTime
+                          ? new Date(item.startTime).toLocaleTimeString()
+                          : "Pending"}
                       </p>
                     </div>
                   </div>
@@ -168,7 +294,6 @@ export default function LeaderDashboard() {
     );
   }
 
-  /* ── Ride monitor ── */
   return (
     <div className="min-h-screen bg-g-bg flex flex-col">
       <NotificationStack
@@ -177,16 +302,25 @@ export default function LeaderDashboard() {
           setNotifications((prev) => prev.filter((item) => item.id !== id))
         }
       />
+
       <Navbar
         title={ride?.name || "Ride Monitor"}
         subtitle={ride?.destination}
         backPath="/leader"
-        badge={ride?.status === "completed" ? "Completed" : `${activeCount} active`}
+        badge={ride?.status === "completed" ? "Completed" : `${totalRiders} riders`}
       />
-      <main className="flex-1 p-5 max-w-7xl mx-auto w-full flex flex-col gap-4">
-        {error && <div className="text-sm text-g-red bg-g-red-tint rounded-xl px-4 py-3">{error}</div>}
 
-        <div className="flex items-center justify-end">
+      <main className="flex-1 p-5 max-w-7xl mx-auto w-full flex flex-col gap-4">
+        {error && (
+          <div className="text-sm text-g-red bg-g-red-tint rounded-xl px-4 py-3">
+            {error}
+          </div>
+        )}
+
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div className="text-sm text-g-muted">
+            Click a rider card to follow them on the map.
+          </div>
           <button
             type="button"
             onClick={handleCompleteRide}
@@ -202,48 +336,110 @@ export default function LeaderDashboard() {
           </button>
         </div>
 
-        {/* Map */}
         <div className="bg-g-surface rounded-2xl shadow-g-card overflow-hidden" style={{ height: "52vh" }}>
-          <LiveMap cyclists={cyclists} leaderId={ride?.leaderId} />
+          <LiveMap
+            cyclists={cyclists}
+            leaderId={ride?.leaderId}
+            selectedCyclistId={selectedCyclistId}
+            followNonce={followNonce}
+          />
         </div>
 
-        {/* Stats */}
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-          <StatCard label="Leader"       value={ride?.leaderId} />
-          <StatCard label="Destination"  value={ride?.destination} />
-          <StatCard label="Started"      value={ride?.startTime ? new Date(ride.startTime).toLocaleTimeString() : null} />
-          <StatCard label="Active riders" value={activeCount} />
+        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
+          <StatCard label="Leader" value={ride?.leaderId} />
+          <StatCard label="Destination" value={ride?.destination} />
+          <StatCard
+            label="Started"
+            value={ride?.startTime ? new Date(ride.startTime).toLocaleTimeString() : null}
+          />
+          <StatCard label="Total riders" value={String(totalRiders)} />
           <StatCard label="Status" value={ride?.status} />
-          <StatCard label="Completed at" value={ride?.endTime ? new Date(ride.endTime).toLocaleTimeString() : null} />
+          <StatCard
+            label="Completed at"
+            value={ride?.endTime ? new Date(ride.endTime).toLocaleTimeString() : null}
+          />
         </div>
 
-        {/* Cyclists */}
+        <div className="bg-g-surface rounded-2xl shadow-g-card p-5">
+          <div className="flex items-center justify-between gap-3 mb-3">
+            <p className="text-sm font-medium text-g-ink">Ride note</p>
+            {ride?.noteUpdatedAt && (
+              <p className="text-xs text-g-faint">
+                Last sent {new Date(ride.noteUpdatedAt).toLocaleTimeString()}
+              </p>
+            )}
+          </div>
+
+          <textarea
+            value={noteDraft}
+            onChange={(event) => setNoteDraft(event.target.value)}
+            rows={3}
+            placeholder="Share a regroup point, caution alert, or route update with all riders."
+            className="w-full resize-none rounded-xl border border-g-border bg-transparent px-4 py-3 text-sm text-g-ink placeholder-g-faint focus:outline-none focus:border-g-blue focus:ring-1 focus:ring-g-blue transition"
+          />
+
+          <div className="mt-3 flex flex-wrap items-center justify-between gap-3">
+            <p className="text-xs text-g-muted">
+              Latest note: {ride?.note ? `${ride.noteAuthor || "Leader"} — ${ride.note}` : "No note sent yet"}
+            </p>
+            <button
+              type="button"
+              onClick={handleSendNote}
+              disabled={!noteDraft.trim()}
+              className="inline-flex items-center gap-2 rounded-full bg-g-blue px-4 py-2 text-sm font-medium text-white transition hover:bg-g-blue-hover disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              <Send className="h-4 w-4" />
+              Send note to riders
+            </button>
+          </div>
+        </div>
+
         <div>
           <p className="text-xs font-medium text-g-faint uppercase tracking-wide mb-3">
-            Riders ({cyclistList.length})
+            Riders ({totalRiders})
           </p>
-          {cyclistList.length === 0 ? (
+          {sortedCyclists.length === 0 ? (
             <div className="bg-g-surface rounded-2xl shadow-g-card p-8 text-center">
               <p className="text-g-muted text-sm">Waiting for riders to join…</p>
             </div>
           ) : (
             <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-3">
-              {cyclistList.map((cyclist) => {
-                const s = gs(cyclist.status);
+              {sortedCyclists.map((cyclist) => {
+                const statusConfig = gs(cyclist.status);
+                const isSelected = cyclist.cyclistId === selectedCyclistId;
+
                 return (
-                  <div key={cyclist.cyclistId} className="bg-g-surface rounded-2xl shadow-g-card p-4">
+                  <button
+                    key={cyclist.cyclistId}
+                    type="button"
+                    onClick={() => handleCyclistCardClick(cyclist.cyclistId)}
+                    className={`bg-g-surface rounded-2xl shadow-g-card p-4 text-left transition ${
+                      isSelected
+                        ? "ring-2 ring-g-blue shadow-g-card-hover"
+                        : "hover:shadow-g-card-hover"
+                    }`}
+                  >
                     <div className="flex items-center justify-between gap-2 mb-3">
-                      <p className="text-sm font-medium text-g-ink truncate">{cyclist.cyclistId}</p>
-                      <s.Icon className={`w-4 h-4 shrink-0 ${s.text}`} />
+                      <p className="text-sm font-medium text-g-ink truncate">
+                        {cyclist.cyclistId}
+                      </p>
+                      <statusConfig.Icon className={`w-4 h-4 shrink-0 ${statusConfig.text}`} />
                     </div>
+
                     <div className="flex items-center justify-between text-xs">
                       <span className="text-g-faint">{cyclist.speed.toFixed(1)} m/s</span>
-                      <span className={`flex items-center gap-1.5 font-medium rounded-full px-2 py-0.5 ${s.chip}`}>
-                        <span className={`w-1.5 h-1.5 rounded-full ${s.dot}`} />
-                        {s.label}
+                      <span
+                        className={`flex items-center gap-1.5 font-medium rounded-full px-2 py-0.5 ${statusConfig.chip}`}
+                      >
+                        <span className={`w-1.5 h-1.5 rounded-full ${statusConfig.dot}`} />
+                        {statusConfig.label}
                       </span>
                     </div>
-                  </div>
+
+                    {isSelected && (
+                      <p className="mt-3 text-xs font-medium text-g-blue">Following on map</p>
+                    )}
+                  </button>
                 );
               })}
             </div>

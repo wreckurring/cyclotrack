@@ -100,10 +100,19 @@ export const useCyclists = (
       });
     };
 
+    const handleRideNote = (payload) => {
+      if (payload.rideId !== rideId) {
+        return;
+      }
+
+      optionsRef.current?.onRideNote?.(payload);
+    };
+
     socket.on("rideSnapshot", handleSnapshot);
     socket.on("cyclistLocationUpdate", handleLocationUpdate);
     socket.on("cyclistStopped", handleCyclistStopped);
     socket.on("cyclistDisconnected", handleCyclistDisconnected);
+    socket.on("rideNote", handleRideNote);
 
     socket.emit("joinRide", {
       rideId,
@@ -117,6 +126,7 @@ export const useCyclists = (
       socket.off("cyclistLocationUpdate", handleLocationUpdate);
       socket.off("cyclistStopped", handleCyclistStopped);
       socket.off("cyclistDisconnected", handleCyclistDisconnected);
+      socket.off("rideNote", handleRideNote);
       disconnectSocket();
     };
   }, [rideId, viewerId]);

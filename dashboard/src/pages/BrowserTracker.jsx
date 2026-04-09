@@ -22,6 +22,7 @@ export default function BrowserTracker() {
   const [error, setError]           = useState("");
   const [coords, setCoords]         = useState(DEFAULT_COORDS);
   const watchIdRef = useRef(null);
+  const joinedRideKeyRef = useRef("");
 
   useEffect(() => {
     let ignore = false;
@@ -43,9 +44,17 @@ export default function BrowserTracker() {
     const onConnect    = () => setSocketState("connected");
     const onDisconnect = () => setSocketState("disconnected");
     const onRideError  = (p) => setError(p?.message || "Unable to join that ride.");
+    const onRideNote   = (payload) => {
+      if (payload?.rideId !== rideId) {
+        return;
+      }
+
+      window.alert(`Ride note from ${payload.author}: ${payload.message}`);
+    };
     socket.on("connect", onConnect);
     socket.on("disconnect", onDisconnect);
     socket.on("rideError", onRideError);
+    socket.on("rideNote", onRideNote);
     if (socket.connected) setSocketState("connected");
     return () => {
       if (watchIdRef.current !== null && navigator.geolocation)
@@ -54,9 +63,34 @@ export default function BrowserTracker() {
       socket.off("connect", onConnect);
       socket.off("disconnect", onDisconnect);
       socket.off("rideError", onRideError);
+      socket.off("rideNote", onRideNote);
       disconnectSocket();
     };
-  }, []);
+  }, [rideId]);
+
+  useEffect(() => {
+    if (!rideId.trim() || !userId.trim()) {
+      return;
+    }
+
+    const nextKey = `${rideId.trim()}:${userId.trim()}`;
+    const socket = getSocket();
+
+    if (!socket.connected || joinedRideKeyRef.current === nextKey) {
+      return;
+    }
+
+    if (joinedRideKeyRef.current) {
+      socket.emit("leaveRide");
+    }
+
+    socket.emit("joinRide", {
+      rideId: rideId.trim(),
+      cyclistId: userId.trim(),
+      role: "cyclist",
+    });
+    joinedRideKeyRef.current = nextKey;
+  }, [rideId, socketState, userId]);
 
   const emitLocation = (next) => {
     if (!rideId.trim() || !userId.trim()) { setError("Select a ride and set a rider ID first."); return; }
@@ -71,6 +105,7 @@ export default function BrowserTracker() {
   const joinRide = () => {
     if (!rideId.trim() || !userId.trim()) { setError("Select a ride and set a rider ID first."); return; }
     getSocket().emit("joinRide", { rideId: rideId.trim(), cyclistId: userId.trim(), role: "cyclist" });
+    joinedRideKeyRef.current = `${rideId.trim()}:${userId.trim()}`;
     setStatus("joined"); setError("");
   };
 
@@ -80,6 +115,7 @@ export default function BrowserTracker() {
       watchIdRef.current = null;
     }
     getSocket().emit("leaveRide");
+    joinedRideKeyRef.current = "";
     setStatus("idle");
   };
 

@@ -236,6 +236,35 @@ module.exports = (io, socket) => {
     );
   });
 
+  socket.on("rideNote", async (payload = {}) => {
+    const rideId = socket.rideId || payload.rideId;
+    const message = payload.message?.trim?.();
+    const author = payload.author?.trim?.() || socket.cyclistId || "Ride leader";
+
+    if (!rideId || !message) {
+      return;
+    }
+
+    const notePayload = {
+      rideId,
+      message,
+      author,
+      timestamp: Date.now(),
+    };
+
+    try {
+      await Ride.findByIdAndUpdate(rideId, {
+        note: message,
+        noteAuthor: author,
+        noteUpdatedAt: new Date(notePayload.timestamp),
+      });
+    } catch (error) {
+      console.error("Ride note update failed:", error.message);
+    }
+
+    io.to(rideId).emit("rideNote", notePayload);
+  });
+
   socket.on("disconnect", async () => {
     await clearParticipantState(io, socket);
   });
