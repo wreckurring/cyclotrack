@@ -38,6 +38,7 @@ const createRide = async (req, res) => {
       leaderId: leaderId?.trim() || "",
       note: "",
       noteAuthor: "",
+      notes: [],
       participants: [],
     });
 

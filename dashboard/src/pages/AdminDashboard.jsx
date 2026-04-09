@@ -3,9 +3,11 @@ import { useNavigate, useParams } from "react-router-dom";
 import { CheckCircle2, Plus } from "lucide-react";
 import LiveMap from "../components/LiveMap";
 import Navbar from "../components/Navbar";
+import NoteHistoryPanel from "../components/NoteHistoryPanel";
 import NotificationStack from "../components/NotificationStack";
 import { useCyclists } from "../hooks/useCyclists";
 import { completeRide, createRide, fetchRide, fetchRides } from "../services/api";
+import { appendRideNote } from "../utils/rideNotes";
 
 function StatCard({ label, value }) {
   return (
@@ -13,7 +15,7 @@ function StatCard({ label, value }) {
       <p className="text-xs font-medium text-g-faint uppercase tracking-wide mb-1">
         {label}
       </p>
-      <p className="text-sm font-medium text-g-ink">{value || "—"}</p>
+      <p className="text-sm font-medium text-g-ink">{value || "-"}</p>
     </div>
   );
 }
@@ -47,19 +49,13 @@ export default function AdminDashboard() {
     rideId ? `admin-viewer-${rideId}` : "admin-viewer",
     {
       onCyclistDisconnected: ({ cyclistId }) => {
-        pushNotification("Rider disconnected", `${cyclistId} went offline during the ride.`);
+        pushNotification(
+          "Rider disconnected",
+          `${cyclistId} went offline during the ride.`,
+        );
       },
       onRideNote: ({ author, message, timestamp }) => {
-        setRide((prev) =>
-          prev
-            ? {
-                ...prev,
-                note: message,
-                noteAuthor: author,
-                noteUpdatedAt: new Date(timestamp).toISOString(),
-              }
-            : prev,
-        );
+        setRide((prev) => appendRideNote(prev, { author, message, timestamp }));
         pushNotification("Ride note", `${author}: ${message}`);
       },
     },
@@ -143,7 +139,10 @@ export default function AdminDashboard() {
       setRides((prev) =>
         prev.map((item) => (item._id === updatedRide._id ? updatedRide : item)),
       );
-      pushNotification("Ride completed", `${updatedRide.name} has been marked as completed.`);
+      pushNotification(
+        "Ride completed",
+        `${updatedRide.name} has been marked as completed.`,
+      );
     } catch (completionError) {
       setError(completionError.message || "Could not complete ride.");
     } finally {
@@ -194,12 +193,15 @@ export default function AdminDashboard() {
             </button>
           </div>
 
-          <div className="bg-g-surface rounded-2xl shadow-g-card overflow-hidden" style={{ height: "50vh" }}>
+          <div
+            className="bg-g-surface rounded-2xl shadow-g-card overflow-hidden"
+            style={{ height: "50vh" }}
+          >
             <LiveMap cyclists={cyclists} leaderId={ride?.leaderId} />
           </div>
 
           <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
-            <StatCard label="Trip Name" value={ride?.name} />
+            <StatCard label="Trip name" value={ride?.name} />
             <StatCard label="Destination" value={ride?.destination} />
             <StatCard label="Leader" value={ride?.leaderId} />
             <StatCard
@@ -214,9 +216,18 @@ export default function AdminDashboard() {
             />
             <StatCard
               label="Latest note"
-              value={ride?.note ? `${ride.noteAuthor || "Leader"} — ${ride.note}` : "No note"}
+              value={ride?.note ? `${ride.noteAuthor || "Leader"} - ${ride.note}` : "No note"}
             />
           </div>
+
+          <NoteHistoryPanel
+            notes={ride?.notes}
+            latestNote={{
+              message: ride?.note,
+              author: ride?.noteAuthor,
+              timestamp: ride?.noteUpdatedAt,
+            }}
+          />
         </main>
       </div>
     );
@@ -258,16 +269,18 @@ export default function AdminDashboard() {
               className="inline-flex items-center justify-center gap-2 bg-g-blue hover:bg-g-blue-hover disabled:opacity-40 disabled:cursor-not-allowed text-white font-medium rounded-full px-5 py-2.5 text-sm transition"
             >
               <Plus className="w-4 h-4" />
-              {creating ? "Creating…" : "Create Ride"}
+              {creating ? "Creating..." : "Create ride"}
             </button>
           </div>
           {error && <p className="mt-3 text-sm text-g-red">{error}</p>}
         </div>
 
         <div>
-          <p className="text-xs font-medium text-g-faint uppercase tracking-wide mb-3">All Rides</p>
+          <p className="text-xs font-medium text-g-faint uppercase tracking-wide mb-3">
+            All rides
+          </p>
           {loading ? (
-            <p className="text-sm text-g-faint py-8 text-center">Loading rides…</p>
+            <p className="text-sm text-g-faint py-8 text-center">Loading rides...</p>
           ) : rides.length === 0 ? (
             <div className="bg-g-surface rounded-2xl shadow-g-card p-10 text-center">
               <p className="text-g-muted text-sm">No rides found. Create one above.</p>

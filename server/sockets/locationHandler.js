@@ -254,9 +254,23 @@ module.exports = (io, socket) => {
 
     try {
       await Ride.findByIdAndUpdate(rideId, {
-        note: message,
-        noteAuthor: author,
-        noteUpdatedAt: new Date(notePayload.timestamp),
+        $set: {
+          note: message,
+          noteAuthor: author,
+          noteUpdatedAt: new Date(notePayload.timestamp),
+        },
+        $push: {
+          notes: {
+            $each: [
+              {
+                message,
+                author,
+                timestamp: new Date(notePayload.timestamp),
+              },
+            ],
+            $slice: -20,
+          },
+        },
       });
     } catch (error) {
       console.error("Ride note update failed:", error.message);

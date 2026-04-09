@@ -11,11 +11,13 @@ import {
 } from "lucide-react";
 import LiveMap from "../components/LiveMap";
 import Navbar from "../components/Navbar";
+import NoteHistoryPanel from "../components/NoteHistoryPanel";
 import NotificationStack from "../components/NotificationStack";
 import { useCyclists } from "../hooks/useCyclists";
 import { completeRide, fetchRide, fetchRides } from "../services/api";
 import { getSocket } from "../services/socketService";
 import { useAuth } from "../context/AuthContext";
+import { appendRideNote } from "../utils/rideNotes";
 
 const STATUS = {
   moving: {
@@ -47,13 +49,15 @@ const STATUS = {
     Icon: WifiOff,
   },
 };
-const DEF = {
+
+const DEFAULT_STATUS = {
   dot: "bg-g-blue",
   text: "text-g-blue",
   chip: "bg-g-blue-tint text-g-blue",
   label: "Active",
   Icon: Bike,
 };
+
 const STATUS_ORDER = {
   stationary: 0,
   disconnected: 1,
@@ -61,7 +65,7 @@ const STATUS_ORDER = {
   moving: 3,
 };
 
-const gs = (status) => STATUS[status] || DEF;
+const getStatusConfig = (status) => STATUS[status] || DEFAULT_STATUS;
 
 function StatCard({ label, value }) {
   return (
@@ -69,7 +73,7 @@ function StatCard({ label, value }) {
       <p className="text-xs font-medium text-g-faint uppercase tracking-wide mb-1">
         {label}
       </p>
-      <p className="text-sm font-medium text-g-ink">{value || "—"}</p>
+      <p className="text-sm font-medium text-g-ink">{value || "-"}</p>
     </div>
   );
 }
@@ -105,19 +109,13 @@ export default function LeaderDashboard() {
     rideId ? `leader-viewer-${rideId}` : "leader-viewer",
     {
       onCyclistDisconnected: ({ cyclistId }) => {
-        pushNotification("Rider disconnected", `${cyclistId} went offline during the ride.`);
+        pushNotification(
+          "Rider disconnected",
+          `${cyclistId} went offline during the ride.`,
+        );
       },
       onRideNote: ({ author, message, timestamp }) => {
-        setRide((prev) =>
-          prev
-            ? {
-                ...prev,
-                note: message,
-                noteAuthor: author,
-                noteUpdatedAt: new Date(timestamp).toISOString(),
-              }
-            : prev,
-        );
+        setRide((prev) => appendRideNote(prev, { author, message, timestamp }));
         pushNotification("Ride note", `${author}: ${message}`);
       },
     },
@@ -134,7 +132,7 @@ export default function LeaderDashboard() {
           const data = await fetchRide(rideId);
           if (!ignore) {
             setRide(data);
-            setNoteDraft(data.note || "");
+            setNoteDraft("");
           }
         } else {
           const data = await fetchRides();
@@ -189,7 +187,10 @@ export default function LeaderDashboard() {
     try {
       const updatedRide = await completeRide(rideId);
       setRide(updatedRide);
-      pushNotification("Ride completed", `${updatedRide.name} has been marked as completed.`);
+      pushNotification(
+        "Ride completed",
+        `${updatedRide.name} has been marked as completed.`,
+      );
     } catch (completionError) {
       setError(completionError.message || "Unable to complete the ride.");
     } finally {
@@ -209,17 +210,12 @@ export default function LeaderDashboard() {
       message,
       author: user?.username || ride?.leaderId || "Ride leader",
     });
+
+    setNoteDraft("");
   };
 
   const handleCyclistCardClick = (cyclistId) => {
-    setSelectedCyclistId((current) => {
-      if (current === cyclistId) {
-        return null;
-      }
-
-      return cyclistId;
-    });
-
+    setSelectedCyclistId((current) => (current === cyclistId ? null : cyclistId));
     setFollowNonce((current) => current + 1);
   };
 
@@ -235,11 +231,13 @@ export default function LeaderDashboard() {
           )}
 
           {loading ? (
-            <p className="text-sm text-g-faint py-12 text-center">Loading rides…</p>
+            <p className="text-sm text-g-faint py-12 text-center">Loading rides...</p>
           ) : rides.length === 0 ? (
             <div className="bg-g-surface rounded-2xl shadow-g-card p-12 text-center">
               <Bike className="w-10 h-10 text-g-border mx-auto mb-3" />
-              <p className="text-g-muted text-sm">No rides yet — ask an admin to create one.</p>
+              <p className="text-g-muted text-sm">
+                No rides yet - ask an admin to create one.
+              </p>
             </div>
           ) : (
             <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
@@ -336,7 +334,10 @@ export default function LeaderDashboard() {
           </button>
         </div>
 
-        <div className="bg-g-surface rounded-2xl shadow-g-card overflow-hidden" style={{ height: "52vh" }}>
+        <div
+          className="bg-g-surface rounded-2xl shadow-g-card overflow-hidden"
+          style={{ height: "52vh" }}
+        >
           <LiveMap
             cyclists={cyclists}
             leaderId={ride?.leaderId}
@@ -360,38 +361,52 @@ export default function LeaderDashboard() {
           />
         </div>
 
-        <div className="bg-g-surface rounded-2xl shadow-g-card p-5">
-          <div className="flex items-center justify-between gap-3 mb-3">
-            <p className="text-sm font-medium text-g-ink">Ride note</p>
-            {ride?.noteUpdatedAt && (
-              <p className="text-xs text-g-faint">
-                Last sent {new Date(ride.noteUpdatedAt).toLocaleTimeString()}
+        <div className="grid gap-4 xl:grid-cols-[minmax(0,1.15fr)_minmax(320px,0.85fr)]">
+          <div className="bg-g-surface rounded-2xl shadow-g-card p-5">
+            <div className="flex items-center justify-between gap-3 mb-3">
+              <p className="text-sm font-medium text-g-ink">Ride note</p>
+              {ride?.noteUpdatedAt && (
+                <p className="text-xs text-g-faint">
+                  Last sent {new Date(ride.noteUpdatedAt).toLocaleTimeString()}
+                </p>
+              )}
+            </div>
+
+            <textarea
+              value={noteDraft}
+              onChange={(event) => setNoteDraft(event.target.value)}
+              rows={4}
+              placeholder="Share a regroup point, caution alert, or route update with all riders."
+              className="w-full resize-none rounded-xl border border-g-border bg-transparent px-4 py-3 text-sm text-g-ink placeholder-g-faint focus:outline-none focus:border-g-blue focus:ring-1 focus:ring-g-blue transition"
+            />
+
+            <div className="mt-3 flex flex-wrap items-center justify-between gap-3">
+              <p className="text-xs text-g-muted">
+                Latest note:{" "}
+                {ride?.note
+                  ? `${ride.noteAuthor || "Leader"} - ${ride.note}`
+                  : "No note sent yet"}
               </p>
-            )}
+              <button
+                type="button"
+                onClick={handleSendNote}
+                disabled={!noteDraft.trim()}
+                className="inline-flex items-center gap-2 rounded-full bg-g-blue px-4 py-2 text-sm font-medium text-white transition hover:bg-g-blue-hover disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                <Send className="h-4 w-4" />
+                Send note to riders
+              </button>
+            </div>
           </div>
 
-          <textarea
-            value={noteDraft}
-            onChange={(event) => setNoteDraft(event.target.value)}
-            rows={3}
-            placeholder="Share a regroup point, caution alert, or route update with all riders."
-            className="w-full resize-none rounded-xl border border-g-border bg-transparent px-4 py-3 text-sm text-g-ink placeholder-g-faint focus:outline-none focus:border-g-blue focus:ring-1 focus:ring-g-blue transition"
+          <NoteHistoryPanel
+            notes={ride?.notes}
+            latestNote={{
+              message: ride?.note,
+              author: ride?.noteAuthor,
+              timestamp: ride?.noteUpdatedAt,
+            }}
           />
-
-          <div className="mt-3 flex flex-wrap items-center justify-between gap-3">
-            <p className="text-xs text-g-muted">
-              Latest note: {ride?.note ? `${ride.noteAuthor || "Leader"} — ${ride.note}` : "No note sent yet"}
-            </p>
-            <button
-              type="button"
-              onClick={handleSendNote}
-              disabled={!noteDraft.trim()}
-              className="inline-flex items-center gap-2 rounded-full bg-g-blue px-4 py-2 text-sm font-medium text-white transition hover:bg-g-blue-hover disabled:cursor-not-allowed disabled:opacity-50"
-            >
-              <Send className="h-4 w-4" />
-              Send note to riders
-            </button>
-          </div>
         </div>
 
         <div>
@@ -400,12 +415,12 @@ export default function LeaderDashboard() {
           </p>
           {sortedCyclists.length === 0 ? (
             <div className="bg-g-surface rounded-2xl shadow-g-card p-8 text-center">
-              <p className="text-g-muted text-sm">Waiting for riders to join…</p>
+              <p className="text-g-muted text-sm">Waiting for riders to join...</p>
             </div>
           ) : (
             <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-3">
               {sortedCyclists.map((cyclist) => {
-                const statusConfig = gs(cyclist.status);
+                const statusConfig = getStatusConfig(cyclist.status);
                 const isSelected = cyclist.cyclistId === selectedCyclistId;
 
                 return (
@@ -423,7 +438,9 @@ export default function LeaderDashboard() {
                       <p className="text-sm font-medium text-g-ink truncate">
                         {cyclist.cyclistId}
                       </p>
-                      <statusConfig.Icon className={`w-4 h-4 shrink-0 ${statusConfig.text}`} />
+                      <statusConfig.Icon
+                        className={`w-4 h-4 shrink-0 ${statusConfig.text}`}
+                      />
                     </div>
 
                     <div className="flex items-center justify-between text-xs">
@@ -437,7 +454,9 @@ export default function LeaderDashboard() {
                     </div>
 
                     {isSelected && (
-                      <p className="mt-3 text-xs font-medium text-g-blue">Following on map</p>
+                      <p className="mt-3 text-xs font-medium text-g-blue">
+                        Following on map
+                      </p>
                     )}
                   </button>
                 );

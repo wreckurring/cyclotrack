@@ -8,6 +8,13 @@ const RideSchema = new mongoose.Schema(
     note: { type: String, default: "" },
     noteAuthor: { type: String, default: "" },
     noteUpdatedAt: { type: Date },
+    notes: [
+      {
+        message: { type: String, required: true },
+        author: { type: String, default: "Ride leader" },
+        timestamp: { type: Date, default: Date.now },
+      },
+    ],
     startTime: { type: Date, default: Date.now },
     endTime: { type: Date },
     participants: [{ type: String }],
