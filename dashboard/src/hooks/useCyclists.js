@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   disconnectSocket,
   getSocket,
@@ -11,8 +11,17 @@ const toCyclistMap = (cyclists = []) =>
     return accumulator;
   }, {});
 
-export const useCyclists = (rideId, viewerId = "dashboard-viewer") => {
+export const useCyclists = (
+  rideId,
+  viewerId = "dashboard-viewer",
+  options = {},
+) => {
   const [cyclists, setCyclists] = useState({});
+  const optionsRef = useRef(options);
+
+  useEffect(() => {
+    optionsRef.current = options;
+  }, [options]);
 
   useEffect(() => {
     if (!rideId) {
@@ -74,6 +83,12 @@ export const useCyclists = (rideId, viewerId = "dashboard-viewer") => {
         if (!prev[cyclistId]) {
           return prev;
         }
+
+        optionsRef.current?.onCyclistDisconnected?.({
+          cyclistId,
+          rideId: eventRideId,
+          cyclist: prev[cyclistId],
+        });
 
         return {
           ...prev,

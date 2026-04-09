@@ -128,10 +128,15 @@ module.exports = (io, socket) => {
     }
 
     try {
-      const rideExists = await Ride.exists({ _id: rideId });
+      const ride = await Ride.findById(rideId).select("status");
 
-      if (!rideExists) {
+      if (!ride) {
         socket.emit("rideError", { message: "That ride could not be found." });
+        return;
+      }
+
+      if (ride.status === "completed") {
+        socket.emit("rideError", { message: "This ride has already been completed." });
         return;
       }
     } catch (error) {

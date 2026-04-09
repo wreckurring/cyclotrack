@@ -1,10 +1,11 @@
 import React, { useEffect, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
-import { Activity, AlertCircle, Bike, Navigation, WifiOff } from "lucide-react";
+import { Activity, AlertCircle, Bike, CheckCircle2, Navigation, WifiOff } from "lucide-react";
 import LiveMap from "../components/LiveMap";
 import Navbar from "../components/Navbar";
+import NotificationStack from "../components/NotificationStack";
 import { useCyclists } from "../hooks/useCyclists";
-import { fetchRide, fetchRides } from "../services/api";
+import { completeRide, fetchRide, fetchRides } from "../services/api";
 
 const STATUS = {
   moving:       { dot: "bg-g-green",  text: "text-g-green",  chip: "bg-g-green-tint text-g-green",  label: "Moving",       Icon: Navigation  },
@@ -28,12 +29,35 @@ function StatCard({ label, value }) {
 export default function LeaderDashboard() {
   const { rideId } = useParams();
   const navigate = useNavigate();
-  const cyclists = useCyclists(rideId, rideId ? `leader-viewer-${rideId}` : "leader-viewer");
-
   const [rides, setRides] = useState([]);
   const [ride, setRide]   = useState(null);
   const [loading, setLoading] = useState(false);
   const [error, setError]     = useState(null);
+  const [notifications, setNotifications] = useState([]);
+  const [completing, setCompleting] = useState(false);
+
+  const liveRideId = ride?.status === "completed" ? null : rideId;
+  const cyclists = useCyclists(
+    liveRideId,
+    rideId ? `leader-viewer-${rideId}` : "leader-viewer",
+    {
+      onCyclistDisconnected: ({ cyclistId }) => {
+        const id = `${Date.now()}-${cyclistId}`;
+        setNotifications((prev) => [
+          {
+            id,
+            title: "Rider disconnected",
+            message: `${cyclistId} went offline during the ride.`,
+          },
+          ...prev,
+        ].slice(0, 4));
+
+        setTimeout(() => {
+          setNotifications((prev) => prev.filter((item) => item.id !== id));
+        }, 5000);
+      },
+    },
+  );
 
   useEffect(() => {
     let ignore = false;
@@ -51,6 +75,38 @@ export default function LeaderDashboard() {
 
   const cyclistList = Object.values(cyclists);
   const activeCount = cyclistList.filter((c) => c.status !== "disconnected").length;
+
+  const handleCompleteRide = async () => {
+    if (!rideId || ride?.status === "completed") {
+      return;
+    }
+
+    setCompleting(true);
+    setError(null);
+
+    try {
+      const updatedRide = await completeRide(rideId);
+      setRide(updatedRide);
+
+      const id = `${Date.now()}-ride-complete`;
+      setNotifications((prev) => [
+        {
+          id,
+          title: "Ride completed",
+          message: `${updatedRide.name} has been marked as completed.`,
+        },
+        ...prev,
+      ].slice(0, 4));
+
+      setTimeout(() => {
+        setNotifications((prev) => prev.filter((item) => item.id !== id));
+      }, 5000);
+    } catch (err) {
+      setError(err.message || "Unable to complete the ride.");
+    } finally {
+      setCompleting(false);
+    }
+  };
 
   /* ── Rides list ── */
   if (!rideId) {
@@ -115,14 +171,36 @@ export default function LeaderDashboard() {
   /* ── Ride monitor ── */
   return (
     <div className="min-h-screen bg-g-bg flex flex-col">
+      <NotificationStack
+        notifications={notifications}
+        onDismiss={(id) =>
+          setNotifications((prev) => prev.filter((item) => item.id !== id))
+        }
+      />
       <Navbar
         title={ride?.name || "Ride Monitor"}
         subtitle={ride?.destination}
         backPath="/leader"
-        badge={`${activeCount} active`}
+        badge={ride?.status === "completed" ? "Completed" : `${activeCount} active`}
       />
       <main className="flex-1 p-5 max-w-7xl mx-auto w-full flex flex-col gap-4">
         {error && <div className="text-sm text-g-red bg-g-red-tint rounded-xl px-4 py-3">{error}</div>}
+
+        <div className="flex items-center justify-end">
+          <button
+            type="button"
+            onClick={handleCompleteRide}
+            disabled={completing || ride?.status === "completed"}
+            className="inline-flex items-center gap-2 rounded-full bg-g-green px-4 py-2 text-sm font-medium text-white transition hover:bg-[#1a7a35] disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            <CheckCircle2 className="h-4 w-4" />
+            {ride?.status === "completed"
+              ? "Ride completed"
+              : completing
+                ? "Completing..."
+                : "Mark ride complete"}
+          </button>
+        </div>
 
         {/* Map */}
         <div className="bg-g-surface rounded-2xl shadow-g-card overflow-hidden" style={{ height: "52vh" }}>
@@ -135,6 +213,8 @@ export default function LeaderDashboard() {
           <StatCard label="Destination"  value={ride?.destination} />
           <StatCard label="Started"      value={ride?.startTime ? new Date(ride.startTime).toLocaleTimeString() : null} />
           <StatCard label="Active riders" value={activeCount} />
+          <StatCard label="Status" value={ride?.status} />
+          <StatCard label="Completed at" value={ride?.endTime ? new Date(ride.endTime).toLocaleTimeString() : null} />
         </div>
 
         {/* Cyclists */}

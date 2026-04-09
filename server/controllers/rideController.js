@@ -62,9 +62,38 @@ const getRideById = async (req, res) => {
   }
 };
 
+// @desc    Mark ride as completed
+// @route   PATCH /api/rides/:id/complete
+// @access  Public (Mock)
+const completeRide = async (req, res) => {
+  try {
+    const ride = await Ride.findById(req.params.id);
+
+    if (!ride) {
+      return res.status(404).json({ message: "Ride not found" });
+    }
+
+    if (ride.status === "completed") {
+      return res.json(ride);
+    }
+
+    ride.status = "completed";
+    ride.endTime = ride.endTime || new Date();
+    ride.participants = [];
+
+    await ride.save();
+
+    res.json(ride);
+  } catch (err) {
+    console.error("Error completing ride:", err);
+    res.status(500).json({ message: "Server error" });
+  }
+};
+
 module.exports = {
   getHealthStatus,
   getAllRides,
   createRide,
   getRideById,
+  completeRide,
 };

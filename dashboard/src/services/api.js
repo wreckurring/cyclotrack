@@ -27,3 +27,8 @@ export const createRide = (payload) =>
     method: "POST",
     body: JSON.stringify(payload),
   });
+
+export const completeRide = (rideId) =>
+  request(`/api/rides/${rideId}/complete`, {
+    method: "PATCH",
+  });

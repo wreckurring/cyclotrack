@@ -10,7 +10,7 @@ const app = express();
 
 app.use(cors({
   origin: true,
-  methods: ['GET', 'POST'],
+  methods: ['GET', 'POST', 'PATCH'],
 }));
 app.use(express.json());
 
@@ -20,7 +20,7 @@ const server = http.createServer(app);
 const io = new Server(server, {
   cors: {
     origin: true,
-    methods: ["GET", "POST"],
+    methods: ["GET", "POST", "PATCH"],
   },
 });
 
