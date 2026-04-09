@@ -1,13 +1,15 @@
 import React, { useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { Bike, Eye, EyeOff, Lock, User } from "lucide-react";
+import { Bike, Eye, EyeOff } from "lucide-react";
 import { useAuth } from "../context/AuthContext";
 
 const ROLES = [
-  { id: "cyclist", label: "Rider", path: "/cyclist" },
-  { id: "leader", label: "Leader", path: "/leader" },
-  { id: "admin", label: "Admin", path: "/admin" },
+  { id: "cyclist", label: "Rider" },
+  { id: "leader", label: "Leader" },
+  { id: "admin",   label: "Admin"  },
 ];
+
+const PATHS = { cyclist: "/cyclist", leader: "/leader", admin: "/admin" };
 
 export default function Login() {
   const navigate = useNavigate();
@@ -22,100 +24,93 @@ export default function Login() {
   const handleSubmit = (e) => {
     e.preventDefault();
     setError("");
-
-    if (!username.trim()) {
-      setError("Username is required.");
-      return;
-    }
-    if (password.length < 4) {
-      setError("Password must be at least 4 characters.");
-      return;
-    }
-    if (!role) {
-      setError("Select a role to continue.");
-      return;
-    }
-
-    const selected = ROLES.find((r) => r.id === role);
+    if (!username.trim())   { setError("Enter your username."); return; }
+    if (password.length < 4){ setError("Password must be at least 4 characters."); return; }
+    if (!role)               { setError("Choose a role to continue."); return; }
     login(username.trim(), role);
-    navigate(selected.path);
+    navigate(PATHS[role]);
   };
 
   return (
-    <div className="min-h-screen bg-zinc-950 flex items-center justify-center p-4">
-      <div className="w-full max-w-sm">
+    <div className="min-h-screen bg-g-bg flex items-center justify-center p-4">
+      <div className="w-full max-w-[400px]">
 
-        {/* Brand */}
-        <div className="text-center mb-8">
-          <div className="inline-flex items-center justify-center w-14 h-14 rounded-2xl bg-cyan-500/10 border border-cyan-500/20 mb-4">
-            <Bike className="w-7 h-7 text-cyan-400" />
+        {/* Card — matches Google accounts.google.com style */}
+        <div className="bg-g-surface rounded-3xl shadow-g-card px-10 py-10">
+
+          {/* Brand */}
+          <div className="text-center mb-8">
+            <div className="inline-flex items-center justify-center w-12 h-12 rounded-full bg-g-blue-tint mb-5">
+              <Bike className="w-6 h-6 text-g-blue" />
+            </div>
+            <h1 className="text-2xl font-normal text-g-ink tracking-tight">Sign in</h1>
+            <p className="text-sm text-g-muted mt-1">to continue to CycloTrack</p>
           </div>
-          <h1 className="text-2xl font-bold text-white tracking-tight">CycloTrack</h1>
-          <p className="text-zinc-500 text-sm mt-1">Real-time group ride monitoring</p>
-        </div>
 
-        {/* Card */}
-        <div className="bg-zinc-900 border border-zinc-800 rounded-2xl p-6 shadow-2xl shadow-black/40">
-          <form onSubmit={handleSubmit} className="space-y-4">
+          <form onSubmit={handleSubmit} className="space-y-5">
 
             {/* Username */}
-            <div>
-              <label className="block text-xs font-medium text-zinc-400 mb-1.5 uppercase tracking-wide">
+            <div className="relative">
+              <input
+                id="username"
+                type="text"
+                value={username}
+                onChange={(e) => setUsername(e.target.value)}
+                placeholder=" "
+                autoComplete="username"
+                className="peer w-full border border-g-border rounded-lg px-4 pt-5 pb-2.5 text-sm text-g-ink bg-transparent focus:outline-none focus:border-g-blue focus:ring-1 focus:ring-g-blue transition"
+              />
+              <label
+                htmlFor="username"
+                className="absolute left-4 top-1/2 -translate-y-1/2 text-sm text-g-faint pointer-events-none transition-all
+                  peer-focus:top-3.5 peer-focus:text-xs peer-focus:text-g-blue
+                  peer-[:not(:placeholder-shown)]:top-3.5 peer-[:not(:placeholder-shown)]:text-xs peer-[:not(:placeholder-shown)]:text-g-muted"
+              >
                 Username
               </label>
-              <div className="relative">
-                <User className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-zinc-600" />
-                <input
-                  type="text"
-                  value={username}
-                  onChange={(e) => setUsername(e.target.value)}
-                  placeholder="your_username"
-                  autoComplete="username"
-                  className="w-full bg-zinc-800 border border-zinc-700 rounded-xl pl-9 pr-4 py-2.5 text-sm text-white placeholder-zinc-600 focus:outline-none focus:ring-2 focus:ring-cyan-500/30 focus:border-cyan-500/50 transition"
-                />
-              </div>
             </div>
 
             {/* Password */}
-            <div>
-              <label className="block text-xs font-medium text-zinc-400 mb-1.5 uppercase tracking-wide">
+            <div className="relative">
+              <input
+                id="password"
+                type={showPassword ? "text" : "password"}
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                placeholder=" "
+                autoComplete="current-password"
+                className="peer w-full border border-g-border rounded-lg px-4 pt-5 pb-2.5 pr-10 text-sm text-g-ink bg-transparent focus:outline-none focus:border-g-blue focus:ring-1 focus:ring-g-blue transition"
+              />
+              <label
+                htmlFor="password"
+                className="absolute left-4 top-1/2 -translate-y-1/2 text-sm text-g-faint pointer-events-none transition-all
+                  peer-focus:top-3.5 peer-focus:text-xs peer-focus:text-g-blue
+                  peer-[:not(:placeholder-shown)]:top-3.5 peer-[:not(:placeholder-shown)]:text-xs peer-[:not(:placeholder-shown)]:text-g-muted"
+              >
                 Password
               </label>
-              <div className="relative">
-                <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-zinc-600" />
-                <input
-                  type={showPassword ? "text" : "password"}
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  placeholder="••••••••"
-                  autoComplete="current-password"
-                  className="w-full bg-zinc-800 border border-zinc-700 rounded-xl pl-9 pr-10 py-2.5 text-sm text-white placeholder-zinc-600 focus:outline-none focus:ring-2 focus:ring-cyan-500/30 focus:border-cyan-500/50 transition"
-                />
-                <button
-                  type="button"
-                  onClick={() => setShowPassword(!showPassword)}
-                  className="absolute right-3 top-1/2 -translate-y-1/2 text-zinc-600 hover:text-zinc-400 transition"
-                >
-                  {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-                </button>
-              </div>
+              <button
+                type="button"
+                onClick={() => setShowPassword(!showPassword)}
+                className="absolute right-3 top-1/2 -translate-y-1/2 text-g-faint hover:text-g-muted transition"
+              >
+                {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+              </button>
             </div>
 
-            {/* Role */}
+            {/* Role chips */}
             <div>
-              <label className="block text-xs font-medium text-zinc-400 mb-1.5 uppercase tracking-wide">
-                Role
-              </label>
-              <div className="grid grid-cols-3 gap-2">
+              <p className="text-xs text-g-muted mb-2.5">Role</p>
+              <div className="flex gap-2">
                 {ROLES.map((r) => (
                   <button
                     key={r.id}
                     type="button"
                     onClick={() => setRole(r.id)}
-                    className={`py-2 rounded-xl text-sm font-medium border transition ${
+                    className={`flex-1 py-2 rounded-full text-sm font-medium border transition ${
                       role === r.id
-                        ? "bg-cyan-500/10 border-cyan-500/40 text-cyan-400"
-                        : "bg-zinc-800 border-zinc-700 text-zinc-500 hover:text-zinc-300 hover:border-zinc-600"
+                        ? "bg-g-blue-tint border-g-blue text-g-blue"
+                        : "bg-transparent border-g-border text-g-muted hover:bg-g-bg-subtle hover:border-g-border-strong"
                     }`}
                   >
                     {r.label}
@@ -126,24 +121,30 @@ export default function Login() {
 
             {/* Error */}
             {error && (
-              <div className="text-sm text-red-400 bg-red-500/10 border border-red-500/20 rounded-xl px-3 py-2.5">
-                {error}
-              </div>
+              <p className="text-sm text-g-red">{error}</p>
             )}
 
-            {/* Submit */}
-            <button
-              type="submit"
-              className="w-full bg-cyan-500 hover:bg-cyan-400 active:bg-cyan-600 text-zinc-950 font-semibold py-2.5 rounded-xl text-sm transition mt-1"
-            >
-              Sign in
-            </button>
+            {/* Actions */}
+            <div className="flex items-center justify-between pt-2">
+              <a href="#" className="text-sm font-medium text-g-blue hover:underline">
+                Forgot password?
+              </a>
+              <button
+                type="submit"
+                className="bg-g-blue hover:bg-g-blue-hover text-white font-medium text-sm px-6 py-2.5 rounded-full transition shadow-sm"
+              >
+                Next
+              </button>
+            </div>
           </form>
         </div>
 
-        <p className="text-center text-xs text-zinc-700 mt-6">
-          CycloTrack · Group Ride Platform
-        </p>
+        {/* Footer */}
+        <div className="flex justify-center gap-6 mt-6">
+          <span className="text-xs text-g-muted">CycloTrack</span>
+          <a href="#" className="text-xs text-g-muted hover:underline">Privacy</a>
+          <a href="#" className="text-xs text-g-muted hover:underline">Terms</a>
+        </div>
       </div>
     </div>
   );
