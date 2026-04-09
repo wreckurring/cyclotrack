@@ -41,11 +41,11 @@ function App() {
           />
           <Route
             path="/phone"
-            element={
-              <ProtectedRoute>
-                <BrowserTracker />
-              </ProtectedRoute>
-            }
+            element={<BrowserTracker />}
+          />
+          <Route
+            path="/track"
+            element={<BrowserTracker />}
           />
           <Route
             path="/admin"

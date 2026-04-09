@@ -1,5 +1,6 @@
-import React, { useEffect, useRef, useState } from "react";
-import { Crosshair, MapPinned, Navigation, Send, Smartphone } from "lucide-react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
+import { ShieldCheck, Smartphone, Target, Wifi, WifiOff } from "lucide-react";
+import { useSearchParams } from "react-router-dom";
 import Navbar from "../components/Navbar";
 import { fetchRides } from "../services/api";
 import {
@@ -8,265 +9,447 @@ import {
   initiateSocketConnection,
 } from "../services/socketService";
 
-const DEFAULT_COORDS = { latitude: 12.9716, longitude: 77.5946 };
+const TRACKER_STATE = {
+  idle: { label: "Idle", color: "text-g-faint" },
+  requesting: { label: "Requesting GPS", color: "text-g-yellow" },
+  tracking: { label: "Live tracking", color: "text-g-green" },
+};
 
-const SOCKET_COLOR = { connected: "text-g-green", disconnected: "text-g-red", connecting: "text-g-yellow" };
-const STATUS_COLOR  = { tracking: "text-g-green", sending: "text-g-blue", joined: "text-g-yellow", idle: "text-g-faint" };
+const formatTime = (timestamp) => {
+  if (!timestamp) {
+    return "-";
+  }
+
+  return new Date(timestamp).toLocaleTimeString([], {
+    hour: "numeric",
+    minute: "2-digit",
+    second: "2-digit",
+  });
+};
+
+const formatCoordinate = (value) =>
+  Number.isFinite(value) ? value.toFixed(6) : "-";
 
 export default function BrowserTracker() {
-  const [rides, setRides]           = useState([]);
-  const [rideId, setRideId]         = useState("");
-  const [userId, setUserId]         = useState("browser_rider_01");
-  const [status, setStatus]         = useState("idle");
+  const [searchParams] = useSearchParams();
+  const [rides, setRides] = useState([]);
+  const [rideId, setRideId] = useState(searchParams.get("rideId") || "");
+  const [userId, setUserId] = useState(searchParams.get("riderId") || "rider_01");
+  const [trackerState, setTrackerState] = useState("idle");
   const [socketState, setSocketState] = useState("connecting");
-  const [error, setError]           = useState("");
-  const [coords, setCoords]         = useState(DEFAULT_COORDS);
+  const [error, setError] = useState("");
+  const [currentLocation, setCurrentLocation] = useState(null);
+  const [lastSentAt, setLastSentAt] = useState(null);
+
   const watchIdRef = useRef(null);
-  const joinedRideKeyRef = useRef("");
+  const isTrackingRef = useRef(false);
+  const wakeLockRef = useRef(null);
+
+  const isSecureTracker = window.isSecureContext;
+
+  const selectedRide = useMemo(
+    () => rides.find((ride) => ride._id === rideId) || null,
+    [rideId, rides],
+  );
+
+  const requestWakeLock = async () => {
+    if (!("wakeLock" in navigator)) {
+      return;
+    }
+
+    try {
+      wakeLockRef.current = await navigator.wakeLock.request("screen");
+    } catch (wakeLockError) {
+      console.warn("Wake lock unavailable:", wakeLockError.message);
+    }
+  };
+
+  const releaseWakeLock = async () => {
+    try {
+      await wakeLockRef.current?.release?.();
+    } catch (wakeLockError) {
+      console.warn("Wake lock release failed:", wakeLockError.message);
+    } finally {
+      wakeLockRef.current = null;
+    }
+  };
+
+  const joinRide = () => {
+    if (!rideId.trim() || !userId.trim()) {
+      return;
+    }
+
+    getSocket().emit("joinRide", {
+      rideId: rideId.trim(),
+      cyclistId: userId.trim(),
+      role: "cyclist",
+    });
+  };
+
+  const stopTracking = async (shouldLeaveRide = true) => {
+    if (watchIdRef.current !== null && navigator.geolocation) {
+      navigator.geolocation.clearWatch(watchIdRef.current);
+      watchIdRef.current = null;
+    }
+
+    if (shouldLeaveRide) {
+      getSocket().emit("leaveRide");
+    }
+
+    isTrackingRef.current = false;
+    setTrackerState("idle");
+    await releaseWakeLock();
+  };
 
   useEffect(() => {
     let ignore = false;
+
     const load = async () => {
       try {
-        const list = await fetchRides();
-        if (!ignore) { setRides(list); setRideId((c) => c || list[0]?._id || ""); }
-      } catch (err) {
-        if (!ignore) setError(err.message || "Unable to load rides.");
+        const rideList = await fetchRides();
+
+        if (!ignore) {
+          setRides(rideList);
+          setRideId((currentRideId) => currentRideId || rideList[0]?._id || "");
+        }
+      } catch (loadError) {
+        if (!ignore) {
+          setError(loadError.message || "Unable to load rides.");
+        }
       }
     };
+
     load();
-    return () => { ignore = true; };
+
+    return () => {
+      ignore = true;
+    };
   }, []);
 
   useEffect(() => {
     initiateSocketConnection();
     const socket = getSocket();
-    const onConnect    = () => setSocketState("connected");
-    const onDisconnect = () => setSocketState("disconnected");
-    const onRideError  = (p) => setError(p?.message || "Unable to join that ride.");
-    const onRideNote   = (payload) => {
+
+    const handleConnect = () => {
+      setSocketState("connected");
+
+      if (isTrackingRef.current) {
+        joinRide();
+      }
+    };
+
+    const handleDisconnect = () => {
+      setSocketState("disconnected");
+    };
+
+    const handleRideError = async (payload) => {
+      setError(payload?.message || "Unable to join that ride.");
+      await stopTracking(false);
+    };
+
+    const handleRideNote = (payload) => {
       if (payload?.rideId !== rideId) {
         return;
       }
 
       window.alert(`Ride note from ${payload.author}: ${payload.message}`);
     };
-    socket.on("connect", onConnect);
-    socket.on("disconnect", onDisconnect);
-    socket.on("rideError", onRideError);
-    socket.on("rideNote", onRideNote);
-    if (socket.connected) setSocketState("connected");
+
+    const handleVisibilityChange = () => {
+      if (!document.hidden && isTrackingRef.current) {
+        requestWakeLock();
+      }
+    };
+
+    socket.on("connect", handleConnect);
+    socket.on("disconnect", handleDisconnect);
+    socket.on("rideError", handleRideError);
+    socket.on("rideNote", handleRideNote);
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+
+    if (socket.connected) {
+      setSocketState("connected");
+    }
+
     return () => {
-      if (watchIdRef.current !== null && navigator.geolocation)
-        navigator.geolocation.clearWatch(watchIdRef.current);
-      socket.emit("leaveRide");
-      socket.off("connect", onConnect);
-      socket.off("disconnect", onDisconnect);
-      socket.off("rideError", onRideError);
-      socket.off("rideNote", onRideNote);
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
+      socket.off("connect", handleConnect);
+      socket.off("disconnect", handleDisconnect);
+      socket.off("rideError", handleRideError);
+      socket.off("rideNote", handleRideNote);
+      stopTracking();
       disconnectSocket();
     };
-  }, [rideId]);
+  }, [rideId, userId]);
 
-  useEffect(() => {
+  const startTracking = async () => {
     if (!rideId.trim() || !userId.trim()) {
+      setError("Select a ride and enter a rider ID before starting.");
       return;
     }
 
-    const nextKey = `${rideId.trim()}:${userId.trim()}`;
-    const socket = getSocket();
-
-    if (!socket.connected || joinedRideKeyRef.current === nextKey) {
+    if (!("geolocation" in navigator)) {
+      setError("This browser does not support live geolocation.");
       return;
     }
 
-    if (joinedRideKeyRef.current) {
-      socket.emit("leaveRide");
+    if (!isSecureTracker) {
+      setError(
+        "Live GPS on a phone needs HTTPS. Open this tracker from your deployed https:// site instead of a local http:// address.",
+      );
+      return;
     }
 
-    socket.emit("joinRide", {
-      rideId: rideId.trim(),
-      cyclistId: userId.trim(),
-      role: "cyclist",
-    });
-    joinedRideKeyRef.current = nextKey;
-  }, [rideId, socketState, userId]);
-
-  const emitLocation = (next) => {
-    if (!rideId.trim() || !userId.trim()) { setError("Select a ride and set a rider ID first."); return; }
-    getSocket().emit("locationUpdate", {
-      rideId: rideId.trim(), cyclistId: userId.trim(), role: "cyclist",
-      latitude: Number(next.latitude), longitude: Number(next.longitude),
-      speed: 0, timestamp: Date.now(),
-    });
-    setStatus("sending"); setError("");
-  };
-
-  const joinRide = () => {
-    if (!rideId.trim() || !userId.trim()) { setError("Select a ride and set a rider ID first."); return; }
-    getSocket().emit("joinRide", { rideId: rideId.trim(), cyclistId: userId.trim(), role: "cyclist" });
-    joinedRideKeyRef.current = `${rideId.trim()}:${userId.trim()}`;
-    setStatus("joined"); setError("");
-  };
-
-  const stopTracking = () => {
-    if (watchIdRef.current !== null && navigator.geolocation) {
-      navigator.geolocation.clearWatch(watchIdRef.current);
-      watchIdRef.current = null;
-    }
-    getSocket().emit("leaveRide");
-    joinedRideKeyRef.current = "";
-    setStatus("idle");
-  };
-
-  const startBrowserTracking = () => {
-    if (!("geolocation" in navigator)) { setError("This browser does not support geolocation."); return; }
-    if (!window.isSecureContext)       { setError("Geolocation requires HTTPS or localhost. Use manual coordinates instead."); return; }
+    setError("");
+    setTrackerState("requesting");
+    isTrackingRef.current = true;
     joinRide();
+    await requestWakeLock();
+
     watchIdRef.current = navigator.geolocation.watchPosition(
-      (pos) => {
-        const next = { latitude: pos.coords.latitude, longitude: pos.coords.longitude };
-        setCoords(next); emitLocation(next); setStatus("tracking");
+      (position) => {
+        const nextLocation = {
+          latitude: position.coords.latitude,
+          longitude: position.coords.longitude,
+          speed: position.coords.speed ?? 0,
+          accuracy: position.coords.accuracy ?? null,
+          timestamp: position.timestamp,
+        };
+
+        setCurrentLocation(nextLocation);
+        setLastSentAt(Date.now());
+        setTrackerState("tracking");
+        setError("");
+
+        getSocket().emit("locationUpdate", {
+          rideId: rideId.trim(),
+          cyclistId: userId.trim(),
+          role: "cyclist",
+          latitude: nextLocation.latitude,
+          longitude: nextLocation.longitude,
+          speed: nextLocation.speed,
+          timestamp: nextLocation.timestamp,
+        });
       },
-      (err) => setError(err.message || "Unable to read location."),
-      { enableHighAccuracy: true, maximumAge: 0, timeout: 10000 }
+      async (watchError) => {
+        setError(watchError.message || "Unable to read your location.");
+        await stopTracking();
+      },
+      {
+        enableHighAccuracy: true,
+        maximumAge: 2000,
+        timeout: 15000,
+      },
     );
   };
 
-  const nudge = (lat, lng) =>
-    setCoords((c) => ({
-      latitude:  Number((c.latitude  + lat).toFixed(6)),
-      longitude: Number((c.longitude + lng).toFixed(6)),
-    }));
+  const trackerMeta = TRACKER_STATE[trackerState] || TRACKER_STATE.idle;
 
   const inputClass =
     "w-full border border-g-border rounded-lg px-4 py-2.5 text-sm text-g-ink bg-transparent placeholder-g-faint focus:outline-none focus:border-g-blue focus:ring-1 focus:ring-g-blue transition";
 
   return (
     <div className="min-h-screen bg-g-bg flex flex-col">
-      <Navbar title="Browser Tracker" subtitle="Test without the mobile app" />
+      <Navbar
+        title="AIT Live Tracker"
+        subtitle="Use this page on a phone to stream real GPS updates"
+      />
 
-      <main className="flex-1 p-5 max-w-3xl mx-auto w-full flex flex-col gap-4">
-
-        {/* Setup */}
-        <div className="bg-g-surface rounded-2xl shadow-g-card p-5">
-          <div className="flex items-center gap-2 mb-4">
-            <Smartphone className="w-4 h-4 text-g-blue" />
-            <p className="text-sm font-medium text-g-ink">Setup</p>
-          </div>
-          <div className="grid gap-3 sm:grid-cols-2">
+      <main className="flex-1 p-4 sm:p-5 max-w-3xl mx-auto w-full flex flex-col gap-4">
+        <div className="bg-g-surface rounded-3xl shadow-g-card p-5 sm:p-6">
+          <div className="flex items-start justify-between gap-4">
             <div>
-              <label className="block text-xs font-medium text-g-faint mb-1.5">Ride</label>
-              <select value={rideId} onChange={(e) => setRideId(e.target.value)} className={inputClass}>
-                <option value="">Select a ride</option>
-                {rides.map((r) => (
-                  <option key={r._id} value={r._id}>{r.name}</option>
-                ))}
-              </select>
+              <p className="text-xs font-medium text-g-faint uppercase tracking-wide mb-2">
+                Phone tracker
+              </p>
+              <h1 className="text-2xl font-semibold text-g-ink tracking-tight">
+                Start live GPS tracking
+              </h1>
+              <p className="text-sm text-g-muted mt-2 max-w-xl leading-6">
+                Keep this page open, allow location permission, and your live
+                position will update on the ride monitor automatically.
+              </p>
             </div>
-            <div>
-              <label className="block text-xs font-medium text-g-faint mb-1.5">Rider ID</label>
-              <input
-                value={userId}
-                onChange={(e) => setUserId(e.target.value)}
-                placeholder="browser_rider_01"
-                className={inputClass}
-              />
+            <div className="hidden sm:flex w-12 h-12 rounded-2xl bg-g-blue-tint text-g-blue items-center justify-center">
+              <Smartphone className="w-6 h-6" />
             </div>
           </div>
         </div>
 
-        {/* Status pills */}
-        <div className="grid grid-cols-3 gap-3">
-          {[
-            { label: "Socket",  value: socketState, colorMap: SOCKET_COLOR },
-            { label: "Tracker", value: status,      colorMap: STATUS_COLOR  },
-            { label: "Mode",    value: window.isSecureContext ? "GPS ready" : "Manual only", colorMap: {} },
-          ].map(({ label, value, colorMap }) => (
-            <div key={label} className="bg-g-surface rounded-2xl shadow-g-card px-4 py-3.5">
-              <p className="text-xs font-medium text-g-faint uppercase tracking-wide mb-1">{label}</p>
-              <p className={`text-sm font-medium capitalize ${colorMap[value] || "text-g-ink-2"}`}>{value}</p>
-            </div>
-          ))}
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+          <div className="bg-g-surface rounded-2xl shadow-g-card px-4 py-3.5">
+            <p className="text-xs font-medium text-g-faint uppercase tracking-wide mb-1">
+              Socket
+            </p>
+            <p
+              className={`text-sm font-medium capitalize ${
+                socketState === "connected"
+                  ? "text-g-green"
+                  : socketState === "connecting"
+                    ? "text-g-yellow"
+                    : "text-g-red"
+              }`}
+            >
+              {socketState}
+            </p>
+          </div>
+          <div className="bg-g-surface rounded-2xl shadow-g-card px-4 py-3.5">
+            <p className="text-xs font-medium text-g-faint uppercase tracking-wide mb-1">
+              Tracker
+            </p>
+            <p className={`text-sm font-medium ${trackerMeta.color}`}>
+              {trackerMeta.label}
+            </p>
+          </div>
+          <div className="bg-g-surface rounded-2xl shadow-g-card px-4 py-3.5">
+            <p className="text-xs font-medium text-g-faint uppercase tracking-wide mb-1">
+              Security
+            </p>
+            <p
+              className={`text-sm font-medium ${
+                isSecureTracker ? "text-g-green" : "text-g-yellow"
+              }`}
+            >
+              {isSecureTracker ? "HTTPS ready" : "Needs HTTPS"}
+            </p>
+          </div>
         </div>
 
         {error && (
-          <div className="text-sm text-g-yellow bg-g-yellow-tint rounded-xl px-4 py-3 border border-g-yellow/20">
+          <div className="text-sm text-g-yellow bg-g-yellow-tint rounded-2xl px-4 py-3 border border-g-yellow/20">
             {error}
           </div>
         )}
 
-        {/* Tracking modes */}
-        <div className="grid gap-3 md:grid-cols-2">
-
-          {/* Browser GPS */}
-          <div className="bg-g-surface rounded-2xl shadow-g-card p-5">
-            <div className="flex items-center gap-2 mb-3">
-              <Crosshair className="w-4 h-4 text-g-blue" />
-              <p className="text-sm font-medium text-g-ink">Browser GPS</p>
+        {!isSecureTracker && (
+          <div className="bg-g-surface rounded-2xl shadow-g-card p-4 border border-g-blue/10">
+            <div className="flex items-start gap-3">
+              <ShieldCheck className="w-5 h-5 text-g-blue shrink-0 mt-0.5" />
+              <div className="text-sm text-g-muted leading-6">
+                Live phone GPS works only on secure pages. Deploy the dashboard,
+                open the tracker on an <span className="font-medium text-g-ink">https://</span> URL,
+                and then tap Start Tracking.
+              </div>
             </div>
-            <p className="text-xs text-g-muted leading-relaxed mb-4">
-              Works on localhost or HTTPS. Some phone browsers block GPS on plain HTTP.
-            </p>
-            <div className="flex gap-2">
-              <button
-                type="button"
-                onClick={startBrowserTracking}
-                className="inline-flex items-center gap-1.5 bg-g-blue hover:bg-g-blue-hover text-white font-medium rounded-full px-4 py-2 text-sm transition"
+          </div>
+        )}
+
+        <div className="bg-g-surface rounded-2xl shadow-g-card p-5">
+          <div className="grid gap-3 sm:grid-cols-2">
+            <div>
+              <label className="block text-xs font-medium text-g-faint mb-1.5">
+                Ride
+              </label>
+              <select
+                value={rideId}
+                onChange={(event) => setRideId(event.target.value)}
+                className={inputClass}
+                disabled={trackerState === "tracking" || trackerState === "requesting"}
               >
-                <Navigation className="w-3.5 h-3.5" />
-                Start GPS
-              </button>
-              <button
-                type="button"
-                onClick={stopTracking}
-                className="px-4 py-2 rounded-full border border-g-border text-sm text-g-muted hover:bg-g-bg hover:border-g-border-strong transition"
-              >
-                Stop
-              </button>
+                <option value="">Select a ride</option>
+                {rides.map((ride) => (
+                  <option key={ride._id} value={ride._id}>
+                    {ride.name}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <div>
+              <label className="block text-xs font-medium text-g-faint mb-1.5">
+                Rider ID
+              </label>
+              <input
+                value={userId}
+                onChange={(event) => setUserId(event.target.value)}
+                placeholder="rider_01"
+                className={inputClass}
+                disabled={trackerState === "tracking" || trackerState === "requesting"}
+              />
             </div>
           </div>
 
-          {/* Manual coords */}
-          <div className="bg-g-surface rounded-2xl shadow-g-card p-5">
-            <div className="flex items-center gap-2 mb-3">
-              <MapPinned className="w-4 h-4 text-g-blue" />
-              <p className="text-sm font-medium text-g-ink">Manual Coordinates</p>
+          {selectedRide && (
+            <div className="mt-4 rounded-2xl bg-g-bg px-4 py-3">
+              <p className="text-sm font-medium text-g-ink">{selectedRide.name}</p>
+              <p className="text-xs text-g-muted mt-1">
+                {selectedRide.destination || "No destination"} · Leader{" "}
+                {selectedRide.leaderId || "TBA"}
+              </p>
             </div>
-            <div className="grid grid-cols-2 gap-2 mb-3">
-              <input type="number" step="0.000001" value={coords.latitude}
-                onChange={(e) => setCoords((c) => ({ ...c, latitude: Number(e.target.value) }))}
-                className={inputClass} />
-              <input type="number" step="0.000001" value={coords.longitude}
-                onChange={(e) => setCoords((c) => ({ ...c, longitude: Number(e.target.value) }))}
-                className={inputClass} />
-            </div>
-            <div className="grid grid-cols-4 gap-1.5 mb-3">
-              {[
-                { label: "N", lat:  0.0003, lng:  0      },
-                { label: "S", lat: -0.0003, lng:  0      },
-                { label: "W", lat:  0,      lng: -0.0003 },
-                { label: "E", lat:  0,      lng:  0.0003 },
-              ].map(({ label, lat, lng }) => (
-                <button
-                  key={label}
-                  type="button"
-                  onClick={() => nudge(lat, lng)}
-                  className="py-1.5 rounded-full border border-g-border text-xs text-g-muted hover:bg-g-bg hover:border-g-border-strong hover:text-g-ink-2 transition"
-                >
-                  {label}
-                </button>
-              ))}
-            </div>
+          )}
+
+          <div className="mt-5 flex flex-col sm:flex-row gap-3">
             <button
               type="button"
-              onClick={() => { joinRide(); emitLocation(coords); }}
-              className="inline-flex items-center gap-1.5 bg-g-green hover:bg-[#1a7a35] text-white font-medium rounded-full px-4 py-2 text-sm transition"
+              onClick={startTracking}
+              disabled={trackerState === "tracking" || trackerState === "requesting"}
+              className="inline-flex items-center justify-center gap-2 rounded-full bg-g-green px-5 py-3 text-sm font-medium text-white transition hover:bg-[#1a7a35] disabled:cursor-not-allowed disabled:opacity-50"
             >
-              <Send className="w-3.5 h-3.5" />
-              Send Location
+              <Target className="w-4 h-4" />
+              {trackerState === "requesting" ? "Starting..." : "Start tracking"}
+            </button>
+            <button
+              type="button"
+              onClick={() => stopTracking()}
+              disabled={trackerState === "idle"}
+              className="inline-flex items-center justify-center gap-2 rounded-full border border-g-border px-5 py-3 text-sm font-medium text-g-muted transition hover:bg-g-bg hover:border-g-border-strong disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              {socketState === "connected" ? (
+                <Wifi className="w-4 h-4" />
+              ) : (
+                <WifiOff className="w-4 h-4" />
+              )}
+              Stop tracking
             </button>
           </div>
+        </div>
+
+        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+          <div className="bg-g-surface rounded-2xl shadow-g-card px-4 py-4">
+            <p className="text-xs font-medium text-g-faint uppercase tracking-wide mb-1">
+              Latitude
+            </p>
+            <p className="text-sm font-medium text-g-ink">
+              {formatCoordinate(currentLocation?.latitude)}
+            </p>
+          </div>
+          <div className="bg-g-surface rounded-2xl shadow-g-card px-4 py-4">
+            <p className="text-xs font-medium text-g-faint uppercase tracking-wide mb-1">
+              Longitude
+            </p>
+            <p className="text-sm font-medium text-g-ink">
+              {formatCoordinate(currentLocation?.longitude)}
+            </p>
+          </div>
+          <div className="bg-g-surface rounded-2xl shadow-g-card px-4 py-4">
+            <p className="text-xs font-medium text-g-faint uppercase tracking-wide mb-1">
+              Speed
+            </p>
+            <p className="text-sm font-medium text-g-ink">
+              {Number.isFinite(currentLocation?.speed)
+                ? `${currentLocation.speed.toFixed(2)} m/s`
+                : "-"}
+            </p>
+          </div>
+          <div className="bg-g-surface rounded-2xl shadow-g-card px-4 py-4">
+            <p className="text-xs font-medium text-g-faint uppercase tracking-wide mb-1">
+              Last update
+            </p>
+            <p className="text-sm font-medium text-g-ink">
+              {formatTime(lastSentAt)}
+            </p>
+          </div>
+        </div>
+
+        <div className="bg-g-surface rounded-2xl shadow-g-card p-4">
+          <p className="text-sm font-medium text-g-ink mb-2">Tracking tips</p>
+          <ul className="text-sm text-g-muted leading-6 space-y-1">
+            <li>Allow precise location access when your phone asks.</li>
+            <li>Keep this page open while riding for the most reliable updates.</li>
+            <li>Use the deployed HTTPS site on your phone, not a local HTTP address.</li>
+            <li>Share the same ride ID with all riders so everyone appears on one map.</li>
+          </ul>
         </div>
       </main>
     </div>

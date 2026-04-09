@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from "react";
-import { Bike, Copy, MapPin } from "lucide-react";
+import { Bike, Copy, ExternalLink, MapPin } from "lucide-react";
 import Navbar from "../components/Navbar";
 import { fetchRides } from "../services/api";
 
@@ -53,7 +53,7 @@ export default function CyclistDashboard() {
         ) : (
           <>
             <p className="text-xs text-g-faint mb-4">
-              Copy a Ride ID and enter it in the mobile tracker to join.
+              Open the live tracker on your phone and start GPS for the ride you want to join.
             </p>
             <div className="grid gap-3 md:grid-cols-2">
               {rides.map((ride) => (
@@ -86,18 +86,29 @@ export default function CyclistDashboard() {
                         <p className="text-xs text-g-faint mb-0.5">Ride ID</p>
                         <p className="text-xs font-mono text-g-muted truncate">{ride._id}</p>
                       </div>
-                      <button
-                        type="button"
-                        onClick={() => copyId(ride._id)}
-                        className={`shrink-0 flex items-center gap-1.5 text-xs font-medium px-3 py-1.5 rounded-full border transition ${
-                          copied === ride._id
-                            ? "bg-g-green-tint border-g-green/30 text-g-green"
-                            : "bg-g-bg border-g-border text-g-muted hover:border-g-border-strong hover:text-g-ink-2"
-                        }`}
-                      >
-                        <Copy className="w-3 h-3" />
-                        {copied === ride._id ? "Copied!" : "Copy"}
-                      </button>
+                      <div className="flex items-center gap-2">
+                        <button
+                          type="button"
+                          onClick={() => copyId(ride._id)}
+                          className={`shrink-0 flex items-center gap-1.5 text-xs font-medium px-3 py-1.5 rounded-full border transition ${
+                            copied === ride._id
+                              ? "bg-g-green-tint border-g-green/30 text-g-green"
+                              : "bg-g-bg border-g-border text-g-muted hover:border-g-border-strong hover:text-g-ink-2"
+                          }`}
+                        >
+                          <Copy className="w-3 h-3" />
+                          {copied === ride._id ? "Copied!" : "Copy"}
+                        </button>
+                        <a
+                          href={`/track?rideId=${ride._id}`}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="shrink-0 inline-flex items-center gap-1.5 text-xs font-medium px-3 py-1.5 rounded-full bg-g-blue-tint text-g-blue hover:bg-g-blue/15 transition"
+                        >
+                          <ExternalLink className="w-3 h-3" />
+                          Open tracker
+                        </a>
+                      </div>
                     </div>
 
                     <div className="grid grid-cols-2 gap-3">
